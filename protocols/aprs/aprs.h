@@ -113,6 +113,26 @@ typedef struct {
     char *comment; // optional
 } aprs_position_with_ts_t;
 
+// Mic-E structure
+typedef struct {
+    double latitude;      // Latitude in degrees (-90 to 90)
+    double longitude;     // Longitude in degrees (-180 to 180)
+    int speed;            // Speed in knots (0-799)
+    int course;           // Course in degrees (0-360)
+    char symbol_table;    // Symbol table identifier ('/' or '\')
+    char symbol_code;     // Symbol code (printable ASCII)
+    char message_code[10]; // Message code (e.g., "M0", "C1", "Emergency")
+} aprs_mice_t;
+
+// telemetry structure
+typedef struct {
+    char callsign[7];     // Callsign (6 chars + null terminator)
+    uint8_t ssid;         // SSID (0-15)
+    unsigned int sequence_number; // Sequence number (0-999)
+    double analog[5];     // Five analog values (0-255)
+    uint8_t digital;      // Eight digital bits (0 or 1)
+} aprs_telemetry_t;
+
 // Function prototypes
 /**
  * Encode a single AX.25 address into a buffer.
@@ -217,6 +237,15 @@ int aprs_encode_position_with_ts(char *info, size_t len, const aprs_position_wit
 int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data);
 bool aprs_validate_timestamp(const char *timestamp, bool zulu);
 int aprs_parse_weather_field(const char *data, char field_id, char *value, size_t value_len);
+int aprs_encode_mice_destination(char *dest_str, const aprs_mice_t *data);
+int aprs_encode_mice_info(char *info, size_t len, const aprs_mice_t *data);
+int aprs_encode_mice_frame(char *buf, size_t buf_len, const aprs_mice_t *data, const aprs_address_t *source, const aprs_address_t *digipeaters,
+        int num_digipeaters);
+int aprs_encode_telemetry(char *info, size_t len, const aprs_telemetry_t *data);
+int aprs_decode_telemetry(const char *info, aprs_telemetry_t *data);
+int aprs_decode_mice_destination(const char *dest_str, aprs_mice_t *data, int *message_bits, bool *ns, bool *long_offset, bool *we);
+int aprs_decode_mice_info(const char *info, size_t len, aprs_mice_t *data, bool long_offset, bool we);
+int aprs_decode_mice_frame(const char *buf, size_t len, aprs_mice_t *data, aprs_address_t *source, aprs_address_t *digipeaters, int *num_digipeaters);
 
 #endif
 

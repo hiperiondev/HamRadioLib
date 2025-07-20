@@ -398,6 +398,54 @@ int test_aprs_weather_object_position() {
         free(decoded.comment);
     }
 
+    // Test: Mic-E encoding and decoding
+    {
+        aprs_mice_t mice = { .latitude = 33.426667, // 33°25.60'N
+                .longitude = -112.129, // 112°07.74'W
+                .speed = 20, .course = 251, .symbol_table = '/', .symbol_code = '[', .message_code = "M3" // Returning
+                };
+        aprs_address_t source = { .callsign = "N0CALL", .ssid = 0 };
+        aprs_address_t digipeaters[1] = { { .callsign = "WIDE1 ", .ssid = 1 } };
+        char buf[256];
+        int len = aprs_encode_mice_frame(buf, 256, &mice, &source, digipeaters, 1);
+        TEST_ASSERT(len >= 25, "Mic-E frame encoding length incorrect", err);
+        aprs_mice_t decoded;
+        aprs_address_t decoded_source;
+        aprs_address_t decoded_digipeaters[8];
+        int decoded_num_digipeaters;
+        int ret = aprs_decode_mice_frame(buf, len, &decoded, &decoded_source, decoded_digipeaters, &decoded_num_digipeaters);
+        TEST_ASSERT(ret == 0, "Mic-E frame decoding failed", err);
+        TEST_ASSERT(fabs(decoded.latitude - 33.426667) < 0.001, "Mic-E latitude mismatch", err);
+        TEST_ASSERT(fabs(decoded.longitude + 112.129) < 0.001, "Mic-E longitude mismatch", err);
+        TEST_ASSERT(decoded.speed == 20, "Mic-E speed mismatch", err);
+        TEST_ASSERT(decoded.course == 251, "Mic-E course mismatch", err);
+        TEST_ASSERT(decoded.symbol_table == '/', "Mic-E symbol table mismatch", err);
+        TEST_ASSERT(decoded.symbol_code == '[', "Mic-E symbol code mismatch", err);
+        TEST_ASSERT(strcmp(decoded.message_code, "M3") == 0, "Mic-E message code mismatch", err);
+        TEST_ASSERT(strcmp(decoded_source.callsign, "N0CALL") == 0, "Mic-E source callsign mismatch", err);
+        TEST_ASSERT(decoded_num_digipeaters == 1, "Mic-E digipeater count mismatch", err);
+    }
+
+    // Test: Telemetry encoding and decoding
+    {
+        aprs_telemetry_t telem = { .callsign = "N0CALL", .ssid = 0, .sequence_number = 123, .analog = { 100.0, 200.0, 150.0, 50.0, 255.0 }, .digital = 0xA5 // 10100101
+                };
+        char info[100];
+        int len = aprs_encode_telemetry(info, 100, &telem);
+        TEST_ASSERT(len == 34, "Telemetry encoding length incorrect", err);
+        TEST_ASSERT(strcmp(info, "T#123,100,200,150,050,255,10100101") == 0, "Telemetry encoding incorrect", err);
+        aprs_telemetry_t decoded;
+        int ret = aprs_decode_telemetry(info, &decoded);
+        TEST_ASSERT(ret == 0, "Telemetry decoding failed", err);
+        TEST_ASSERT(decoded.sequence_number == 123, "Telemetry sequence number mismatch", err);
+        for (int i = 0; i < 5; i++) {
+            char msg[50];
+            snprintf(msg, 50, "Telemetry analog %d mismatch", i);
+            TEST_ASSERT(fabs(decoded.analog[i] - telem.analog[i]) < 0.001, msg, err);
+        }
+        TEST_ASSERT(decoded.digital == 0xA5, "Telemetry digital bits mismatch", err);
+    }
+
     return err;
 }
 
