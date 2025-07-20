@@ -336,7 +336,7 @@ int test_aprs_edge_cases() {
     return err;
 }
 
-int test_aprs_new_packet_types() {
+int test_aprs_weather_object_position() {
     uint8_t err = 0;
 
     // Test: Weather report encoding and decoding
@@ -406,7 +406,7 @@ int test_aprs_main() {
     result |= test_aprs_message_encoding_decoding();
     result |= test_aprs_real_packets();
     result |= test_aprs_edge_cases();
-    result |= test_aprs_new_packet_types();
+    result |= test_aprs_weather_object_position();
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Tests APRS Completed. %s\n", result == 0 ? "All tests passed" : "Some tests failed");
     printf("----------------------------------------------------------------------------------\n\n");

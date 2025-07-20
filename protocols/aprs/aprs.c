@@ -131,16 +131,20 @@ int aprs_encode_addresses(char *buf, const aprs_frame_t *frame) {
 }
 
 int aprs_encode_frame(char *buf, size_t buf_len, const aprs_frame_t *frame) {
-    if (buf_len < 256)
+    if (frame->num_digipeaters > 8 || frame->info_len > 256) {
         return -1;
+    }
+    size_t addr_len = 7 * (2 + frame->num_digipeaters);
+    size_t total_len = 1 + addr_len + 1 + 1 + frame->info_len + 2 + 1; // start flag, addresses, control, PID, info, FCS, end flag
+    if (buf_len < total_len) {
+        return -1;
+    }
     char *p = buf;
-    *p++ = 0x7E; // flag
-    int addr_len = aprs_encode_addresses(p, frame);
-    p += addr_len;
+    *p++ = 0x7E; // start flag
+    int written = aprs_encode_addresses(p, frame);
+    p += written;
     *p++ = 0x03; // control: UI frame
     *p++ = 0xF0; // PID: no layer 3
-    if (frame->info_len > 256)
-        return -1;
     memcpy(p, frame->info, frame->info_len);
     p += frame->info_len;
     unsigned char *fcs_start = (unsigned char*) buf + 1;
@@ -148,7 +152,7 @@ int aprs_encode_frame(char *buf, size_t buf_len, const aprs_frame_t *frame) {
     uint16_t fcs = CRC(fcs_start, fcs_len);
     *p++ = fcs & 0xFF;
     *p++ = (fcs >> 8) & 0xFF;
-    *p++ = 0x7E; // flag
+    *p++ = 0x7E; // end flag
     return p - buf;
 }
 
@@ -181,6 +185,12 @@ char* lon_to_aprs(double lon) {
 }
 
 int aprs_encode_position_no_ts(char *info, size_t len, const aprs_position_no_ts_t *data) {
+    if (data->symbol_table != '/' && data->symbol_table != '\\') {
+        return -1; // Invalid symbol table
+    }
+    if (!isprint(data->symbol_code)) {
+        return -1; // Invalid symbol code
+    }
     char dti = (data->dti == '!' || data->dti == '=') ? data->dti : '!';
 
     char *lat_str = lat_to_aprs(data->latitude);
@@ -217,7 +227,7 @@ int aprs_encode_position_no_ts(char *info, size_t len, const aprs_position_no_ts
 }
 
 int aprs_encode_message(char *info, size_t len, const aprs_message_t *data) {
-    // Check if addressee is null-terminated within 9 characters
+    // Validate addressee length and null termination
     bool null_found = false;
     for (int i = 0; i < 9; i++) {
         if (data->addressee[i] == '\0') {
@@ -226,8 +236,13 @@ int aprs_encode_message(char *info, size_t len, const aprs_message_t *data) {
         }
     }
     if (!null_found && data->addressee[9] != '\0') {
-        return -1; // addressee exceeds 9 characters
+        return -1; // Addressee exceeds 9 characters or not null-terminated
     }
+
+    // Ensure addressee is null-terminated
+    char addressee[10];
+    strncpy(addressee, data->addressee, 9);
+    addressee[9] = '\0';
 
     // Check message length
     if (data->message && strlen(data->message) > 67) {
@@ -240,7 +255,7 @@ int aprs_encode_message(char *info, size_t len, const aprs_message_t *data) {
     }
 
     // Encode the message
-    int ret = snprintf(info, len, ":%-9s:%s", data->addressee, data->message ? data->message : "");
+    int ret = snprintf(info, len, ":%-9s:%s", addressee, data->message ? data->message : "");
     if (ret < 0 || (size_t) ret >= len) {
         return -1;
     }
@@ -460,6 +475,12 @@ int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
 }
 
 int aprs_encode_object_report(char *info, size_t len, const aprs_object_report_t *data) {
+    if (data->symbol_table != '/' && data->symbol_table != '\\') {
+        return -1; // Invalid symbol table
+    }
+    if (!isprint(data->symbol_code)) {
+        return -1; // Invalid symbol code
+    }
     char *lat_str = lat_to_aprs(data->latitude);
     char *lon_str = lon_to_aprs(data->longitude);
     if (!lat_str || !lon_str) {
@@ -527,17 +548,31 @@ int aprs_decode_object_report(const char *info, aprs_object_report_t *data) {
 }
 
 int aprs_encode_position_with_ts(char *info, size_t len, const aprs_position_with_ts_t *data) {
-    char dti = (data->dti == '/' || data->dti == '@') ? data->dti : '/';
+    if (data->symbol_table != '/' && data->symbol_table != '\\') {
+        return -1; // Invalid symbol table
+    }
+    if (!isprint(data->symbol_code)) {
+        return -1; // Invalid symbol code
+    }
+    char dti = (data->dti == '/' || data->dti == '@') ? data->dti : '@';
+
     char *lat_str = lat_to_aprs(data->latitude);
     char *lon_str = lon_to_aprs(data->longitude);
-    if (!lat_str || !lon_str || strlen(data->timestamp) != 7) {
+    if (!lat_str || !lon_str) {
         return -1;
     }
 
-    int ret = snprintf(info, len, "%c%s%s%c%s%c%s", dti, data->timestamp, lat_str, data->symbol_table, lon_str, data->symbol_code,
-            data->comment ? data->comment : "");
+    int ret = snprintf(info, len, "%c%s%s%c%s%c", dti, data->timestamp, lat_str, data->symbol_table, lon_str, data->symbol_code);
     if (ret < 0 || (size_t) ret >= len) {
         return -1;
+    }
+
+    if (data->comment) {
+        int ret2 = snprintf(info + ret, len - ret, "%s", data->comment);
+        if (ret2 < 0 || (size_t) ret2 >= len - ret) {
+            return -1;
+        }
+        ret += ret2;
     }
 
     return ret;
