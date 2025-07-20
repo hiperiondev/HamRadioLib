@@ -215,6 +215,8 @@ int aprs_encode_object_report(char *info, size_t len, const aprs_object_report_t
 int aprs_decode_object_report(const char *info, aprs_object_report_t *data);
 int aprs_encode_position_with_ts(char *info, size_t len, const aprs_position_with_ts_t *data);
 int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data);
+bool aprs_validate_timestamp(const char *timestamp, bool zulu);
+int aprs_parse_weather_field(const char *data, char field_id, char *value, size_t value_len);
 
 #endif
 

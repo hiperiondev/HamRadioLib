@@ -105,15 +105,12 @@ int aprs_encode_address(char *buf, const aprs_address_t *addr, bool is_last, boo
         char c = addr->callsign[i];
         if (c == 0)
             c = ' ';
-        buf[i] = (c << 1) & 0xFE; // shift left and clear bit 0
+        buf[i] = (c << 1) & 0xFE;
     }
     uint8_t ssid_byte = (addr->ssid & 0x0F) << 1;
-    if (!is_digipeater && !is_last) { // destination has C-bit=1
-        ssid_byte |= 0x80;
-    }
     buf[6] = ssid_byte;
     if (is_last) {
-        buf[0] |= 0x01;
+        buf[6] |= 0x01; // set end-of-address bit
     }
     return 7;
 }
@@ -121,6 +118,8 @@ int aprs_encode_address(char *buf, const aprs_address_t *addr, bool is_last, boo
 int aprs_encode_addresses(char *buf, const aprs_frame_t *frame) {
     int offset = 0;
     offset += aprs_encode_address(buf + offset, &frame->destination, false, false);
+    // Set C-bit for destination
+    buf[6] |= 0x80;
     bool source_is_last = (frame->num_digipeaters == 0);
     offset += aprs_encode_address(buf + offset, &frame->source, source_is_last, false);
     for (int i = 0; i < frame->num_digipeaters; i++) {
@@ -280,7 +279,7 @@ int aprs_decode_address(const char *buf, aprs_address_t *addr, bool *is_last) {
     addr->callsign[6] = '\0';
     unsigned char ssid_byte = (unsigned char) buf[6];
     addr->ssid = (ssid_byte >> 1) & 0x0F;
-    *is_last = ((unsigned char) buf[0] & 0x01) != 0;
+    *is_last = (ssid_byte & 0x01) != 0;
     return 7;
 }
 
@@ -421,13 +420,31 @@ int aprs_decode_message(const char *info, aprs_message_t *data) {
 }
 
 int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report_t *data) {
-    // Validate ranges
-    if (data->wind_speed < 0 || data->wind_direction < 0 || data->wind_direction > 360) {
+    // Validate inputs
+    if (strlen(data->timestamp) != 8) {
+        return -1;
+    }
+    if (data->wind_direction < 0 || data->wind_direction > 360 || data->wind_speed < 0) {
+        return -1;
+    }
+    // Explicitly cast to int to avoid floating-point issues
+    int temp = (int) (data->temperature + 0.5); // Round 25.0 to 25
+    if (temp < -99 || temp > 999) { // APRS temperature range constraint
         return -1;
     }
 
-    // Format: _MMDDHHMMcDDD/SSS (simplified weather report)
-    int ret = snprintf(info, len, "_12010000c%03d/%03d", data->wind_direction, data->wind_speed);
+    // Format temperature: "tDDD" for positive, "t-DD" for negative
+    char temp_str[5];
+    if (temp >= 0) {
+        snprintf(temp_str, sizeof(temp_str), "t%03d", temp); // e.g., "t025"
+    } else {
+        snprintf(temp_str, sizeof(temp_str), "t-%02d", -temp); // e.g., "t-05"
+    }
+
+    // Encode weather report without spaces
+    int ret = snprintf(info, len, "_%sc%03ds%03d%s", data->timestamp, data->wind_direction, data->wind_speed, temp_str);
+
+    // Check for encoding errors or buffer overflow
     if (ret < 0 || (size_t) ret >= len) {
         return -1;
     }
@@ -436,38 +453,47 @@ int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report
 }
 
 int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
-    if (info[0] != '_' || strlen(info) < 17) {
+    size_t info_len = strlen(info);
+    if (info[0] != '_' || info_len < 9) {
         return -1;
     }
 
-    // Check for 'c' at position 9
-    if (info[9] != 'c') {
-        return -1;
-    }
+    // Extract timestamp (positions 1-8)
+    strncpy(data->timestamp, info + 1, 8);
+    data->timestamp[8] = '\0';
 
-    // Check for '/' at position 13
-    if (info[13] != '/') {
-        return -1;
-    }
+    // Parse weather data
+    const char *p = info + 9;
+    data->wind_direction = -1;
+    data->wind_speed = -1;
+    data->temperature = NAN;
 
-    // Extract wind direction: positions 10-12
-    char dir_str[4] = { info[10], info[11], info[12], '\0' };
-
-    // Extract wind speed: positions 14-16
-    char speed_str[4] = { info[14], info[15], info[16], '\0' };
-
-    // Check if all characters are digits
-    for (int i = 0; i < 3; i++) {
-        if (!isdigit(dir_str[i]) || !isdigit(speed_str[i])) {
-            return -1;
+    while (*p) {
+        if (*p == 'c') {
+            char dir_str[4];
+            strncpy(dir_str, p + 1, 3);
+            dir_str[3] = '\0';
+            data->wind_direction = atoi(dir_str);
+            p += 4;
+        } else if (*p == 's') {
+            char speed_str[4];
+            strncpy(speed_str, p + 1, 3);
+            speed_str[3] = '\0';
+            data->wind_speed = atoi(speed_str);
+            p += 4;
+        } else if (*p == 't') {
+            char temp_str[4];
+            strncpy(temp_str, p + 1, 3);
+            temp_str[3] = '\0';
+            data->temperature = atof(temp_str);
+            p += 4;
+        } else {
+            p++;
         }
     }
 
-    data->wind_direction = atoi(dir_str);
-    data->wind_speed = atoi(speed_str);
-    data->temperature = 0.0; // Not parsed in this simplified version
-
-    if (data->wind_direction > 360 || data->wind_speed < 0) {
+    // Check if required fields are set
+    if (data->wind_direction == -1 || data->wind_speed == -1 || isnan(data->temperature)) {
         return -1;
     }
 
@@ -487,7 +513,7 @@ int aprs_encode_object_report(char *info, size_t len, const aprs_object_report_t
         return -1;
     }
 
-    int ret = snprintf(info, len, ";%-9s*111111z%s%c%s%c", data->name, lat_str, data->symbol_table, lon_str, data->symbol_code);
+    int ret = snprintf(info, len, ";%-9s*%s%s%c%s%c", data->name, data->timestamp, lat_str, data->symbol_table, lon_str, data->symbol_code);
     if (ret < 0 || (size_t) ret >= len) {
         return -1;
     }
@@ -515,8 +541,13 @@ int aprs_decode_object_report(const char *info, aprs_object_report_t *data) {
         }
     }
 
-    // Check status and timestamp (simplified: assume '*111111z')
-    if (info[10] != '*' || info[17] != 'z') {
+    // Extract timestamp (positions 11-17)
+    if (info[10] != '*') {
+        return -1;
+    }
+    strncpy(data->timestamp, info + 11, 7);
+    data->timestamp[7] = '\0';
+    if (data->timestamp[6] != 'z') {
         return -1;
     }
 
@@ -628,4 +659,29 @@ int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data
     }
 
     return 0;
+}
+
+bool aprs_validate_timestamp(const char *timestamp, bool zulu) {
+    if (strlen(timestamp) != (zulu ? 7 : 8))
+        return false;
+    for (int i = 0; i < (zulu ? 6 : 8); i++) {
+        if (!isdigit(timestamp[i]))
+            return false;
+    }
+    if (zulu && timestamp[6] != 'z')
+        return false;
+    return true;
+}
+
+int aprs_parse_weather_field(const char *data, char field_id, char *value, size_t value_len) {
+    const char *p = data;
+    while (*p) {
+        if (*p == field_id) {
+            strncpy(value, p + 1, value_len - 1);
+            value[value_len - 1] = '\0';
+            return p - data + 4;
+        }
+        p++;
+    }
+    return -1;
 }

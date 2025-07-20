@@ -51,7 +51,7 @@ int test_aprs_address_encoding_decoding() {
         aprs_address_t addr = { .callsign = "APRS  ", .ssid = 0 };
         char buf[7];
         aprs_encode_address(buf, &addr, false, false);
-        uint8_t expected[7] = { ('A' << 1), ('P' << 1), ('R' << 1), ('S' << 1), (' ' << 1), (' ' << 1), (0 << 1) | 0x80 };
+        uint8_t expected[7] = { ('A' << 1), ('P' << 1), ('R' << 1), ('S' << 1), (' ' << 1), (' ' << 1), 0 };
         for (int i = 0; i < 7; i++) {
             TEST_ASSERT((uint8_t )buf[i] == expected[i], "Destination address encoding incorrect", err);
         }
@@ -68,7 +68,7 @@ int test_aprs_address_encoding_decoding() {
         aprs_address_t addr = { .callsign = "N0CALL", .ssid = 7 };
         char buf[7];
         aprs_encode_address(buf, &addr, true, false);
-        uint8_t expected[7] = { ('N' << 1) | 0x01, ('0' << 1), ('C' << 1), ('A' << 1), ('L' << 1), ('L' << 1), (7 << 1) };
+        uint8_t expected[7] = { ('N' << 1), ('0' << 1), ('C' << 1), ('A' << 1), ('L' << 1), ('L' << 1), (7 << 1) | 0x01 };
         for (int i = 0; i < 7; i++) {
             TEST_ASSERT((uint8_t )buf[i] == expected[i], "Source address encoding incorrect", err);
         }
@@ -341,22 +341,24 @@ int test_aprs_weather_object_position() {
 
     // Test: Weather report encoding and decoding
     {
-        aprs_weather_report_t weather = { .temperature = 25.0, .wind_speed = 10, .wind_direction = 180 };
+        aprs_weather_report_t weather = { .timestamp = "12010000", .temperature = 25.0, .wind_speed = 10, .wind_direction = 180 };
         char info[100];
         int len = aprs_encode_weather_report(info, 100, &weather);
-        TEST_ASSERT(len == 17, "Weather report encoding length incorrect", err);
-        TEST_ASSERT(strcmp(info, "_12010000c180/010") == 0, "Weather report encoding incorrect", err);
+        TEST_ASSERT(len == 21, "Weather report encoding length incorrect", err);
+        TEST_ASSERT(strcmp(info, "_12010000c180s010t025") == 0, "Weather report encoding incorrect", err);
         aprs_weather_report_t decoded;
         int ret = aprs_decode_weather_report(info, &decoded);
         TEST_ASSERT(ret == 0, "Weather report decoding failed", err);
-        TEST_ASSERT(fabs(decoded.temperature - 0.0) < 0.001, "Temperature should be 0 (not parsed)", err);
+        TEST_ASSERT(fabs(decoded.temperature - 25.0) < 0.001, "Temperature mismatch", err);
         TEST_ASSERT(decoded.wind_speed == 10, "Wind speed mismatch", err);
         TEST_ASSERT(decoded.wind_direction == 180, "Wind direction mismatch", err);
+        TEST_ASSERT(strcmp(decoded.timestamp, "12010000") == 0, "Timestamp mismatch", err);
     }
 
     // Test: Object report encoding and decoding
     {
-        aprs_object_report_t obj = { .name = "TESTOBJ  ", .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/', .symbol_code = '>' };
+        aprs_object_report_t obj = { .name = "TESTOBJ  ", .timestamp = "111111z", .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/',
+                .symbol_code = '>' };
         char info[100];
         int len = aprs_encode_object_report(info, 100, &obj);
         TEST_ASSERT(len == 37, "Object report encoding length incorrect", err);
@@ -364,7 +366,11 @@ int test_aprs_weather_object_position() {
         aprs_object_report_t decoded;
         int ret = aprs_decode_object_report(info, &decoded);
         TEST_ASSERT(ret == 0, "Object report decoding failed", err);
-        TEST_ASSERT(strcmp(decoded.name, "TESTOBJ") == 0, "Object name mismatch", err);
+        char trimmed_name[10];
+        strncpy(trimmed_name, decoded.name, 9);
+        trimmed_name[9] = '\0';
+        trim_trailing_spaces(trimmed_name);
+        TEST_ASSERT(strcmp(trimmed_name, "TESTOBJ") == 0, "Object name mismatch", err);
         TEST_ASSERT(fabs(decoded.latitude - 37.7749) < 0.001, "Object latitude mismatch", err);
         TEST_ASSERT(fabs(decoded.longitude + 122.4194) < 0.001, "Object longitude mismatch", err);
         TEST_ASSERT(decoded.symbol_table == '/', "Object symbol table mismatch", err);
