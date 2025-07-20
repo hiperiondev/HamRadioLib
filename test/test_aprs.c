@@ -449,6 +449,99 @@ int test_aprs_weather_object_position() {
     return err;
 }
 
+int test_aprs_position_with_ts() {
+    uint8_t err = 0;
+    const char *info = "@092345z4903.50N/07201.75W-Test";
+    aprs_position_with_ts_t pos;
+    int ret = aprs_decode_position_with_ts(info, &pos);
+    TEST_ASSERT(ret == 0, "Failed to decode position with timestamp", err);
+    TEST_ASSERT(pos.dti == '@', "DTI mismatch", err);
+    TEST_ASSERT(strcmp(pos.timestamp, "092345z") == 0, "Timestamp mismatch", err);
+    double expected_lat = 49.0 + 3.50 / 60.0;
+    double expected_lon = -(72.0 + 1.75 / 60.0);
+    TEST_ASSERT(fabs(pos.latitude - expected_lat) < 0.0001, "Latitude mismatch", err);
+    TEST_ASSERT(fabs(pos.longitude - expected_lon) < 0.0001, "Longitude mismatch", err);
+    TEST_ASSERT(pos.symbol_table == '/', "Symbol table mismatch", err);
+    TEST_ASSERT(pos.symbol_code == '-', "Symbol code mismatch", err);
+    TEST_ASSERT(strcmp(pos.comment, "Test") == 0, "Comment mismatch", err);
+    free(pos.comment);
+    return err;
+}
+
+int test_aprs_weather() {
+    uint8_t err = 0;
+    const char *info = "_10090556c220s004g005t077r000p000P000h50b09900wRSW";
+    aprs_weather_report_t weather;
+    int ret = aprs_decode_weather_report(info, &weather);
+    TEST_ASSERT(ret == 0, "Failed to decode weather report", err);
+    TEST_ASSERT(strcmp(weather.timestamp, "10090556") == 0, "Timestamp mismatch", err);
+    TEST_ASSERT(weather.wind_direction == 220, "Wind direction mismatch", err);
+    TEST_ASSERT(weather.wind_speed == 4, "Wind speed mismatch", err);
+    TEST_ASSERT(fabs(weather.temperature - 77.0) < 0.1, "Temperature mismatch", err);
+    return err;
+}
+
+int test_aprs_object() {
+    uint8_t err = 0;
+    const char *info = ";LEADER   *092345z4903.50N/07201.75W>";
+    aprs_object_report_t obj;
+    int ret = aprs_decode_object_report(info, &obj);
+    TEST_ASSERT(ret == 0, "Failed to decode object report", err);
+    TEST_ASSERT(strcmp(obj.name, "LEADER") == 0, "Object name mismatch", err);
+    TEST_ASSERT(strcmp(obj.timestamp, "092345z") == 0, "Timestamp mismatch", err);
+    double expected_lat = 49.0 + 3.50 / 60.0;
+    double expected_lon = -(72.0 + 1.75 / 60.0);
+    TEST_ASSERT(fabs(obj.latitude - expected_lat) < 0.0001, "Latitude mismatch", err);
+    TEST_ASSERT(fabs(obj.longitude - expected_lon) < 0.0001, "Longitude mismatch", err);
+    TEST_ASSERT(obj.symbol_table == '/', "Symbol table mismatch", err);
+    TEST_ASSERT(obj.symbol_code == '>', "Symbol code mismatch", err);
+    return err;
+}
+
+int test_aprs_mice() {
+    uint8_t err = 0;
+    const char *dest_str = "SUSURB";
+    const unsigned char info[] = { 0x60, 0x43, 0x46, 0x22, 0x1C, 0x1F, 0x21, 0x5B, 0x2F, 0x3A, 0x60, 0x22, 0x33, 0x7A, 0x7D, 0x5F, 0x20, 0x00 };
+    aprs_mice_t mice;
+    int message_bits;
+    bool ns, long_offset, we;
+    int ret = aprs_decode_mice_destination(dest_str, &mice, &message_bits, &ns, &long_offset, &we);
+    TEST_ASSERT(ret == 0, "Failed to decode Mic-E destination", err);
+    ret = aprs_decode_mice_info((const char *)info, sizeof(info) - 1, &mice, long_offset, we);
+    TEST_ASSERT(ret == 0, "Failed to decode Mic-E info", err);
+
+    // Set message_code based on message_bits and info type
+    const char *standard_codes[8] = { "Emergency", "M6", "M5", "M4", "M3", "M2", "M1", "M0" };
+    const char *custom_codes[8] = { "Emergency", "C6", "C5", "C4", "C3", "C2", "C1", "C0" };
+    bool is_standard = (info[0] == '`');
+    strcpy(mice.message_code, is_standard ? standard_codes[message_bits] : custom_codes[message_bits]);
+
+    TEST_ASSERT(fabs(mice.latitude - 35.586833) < 0.0001, "Latitude mismatch", err);
+    TEST_ASSERT(fabs(mice.longitude - 139.701) < 0.0001, "Longitude mismatch", err);
+    TEST_ASSERT(mice.course == 305, "Course mismatch", err);
+    TEST_ASSERT(mice.speed == 0, "Speed mismatch", err);
+    TEST_ASSERT(mice.symbol_table == '/', "Symbol table mismatch", err);
+    TEST_ASSERT(mice.symbol_code == '[', "Symbol code mismatch", err);
+    TEST_ASSERT(strcmp(mice.message_code, "M0") == 0, "Message code mismatch", err);
+    return err;
+}
+
+int test_aprs_telemetry() {
+    uint8_t err = 0;
+    const char *info = "T#001,123,045,067,089,100,00000000";
+    aprs_telemetry_t telemetry;
+    int ret = aprs_decode_telemetry(info, &telemetry);
+    TEST_ASSERT(ret == 0, "Failed to decode telemetry", err);
+    TEST_ASSERT(telemetry.sequence_number == 1, "Sequence number mismatch", err);
+    TEST_ASSERT(fabs(telemetry.analog[0] - 123) < 0.1, "Analog 0 mismatch", err);
+    TEST_ASSERT(fabs(telemetry.analog[1] - 45) < 0.1, "Analog 1 mismatch", err);
+    TEST_ASSERT(fabs(telemetry.analog[2] - 67) < 0.1, "Analog 2 mismatch", err);
+    TEST_ASSERT(fabs(telemetry.analog[3] - 89) < 0.1, "Analog 3 mismatch", err);
+    TEST_ASSERT(fabs(telemetry.analog[4] - 100) < 0.1, "Analog 4 mismatch", err);
+    TEST_ASSERT(telemetry.digital == 0, "Digital bits mismatch", err);
+    return 0;
+}
+
 int test_aprs_main() {
     int result = 0;
     printf("\n----------------------------------------------------------------------------------\n");
@@ -461,6 +554,11 @@ int test_aprs_main() {
     result |= test_aprs_real_packets();
     result |= test_aprs_edge_cases();
     result |= test_aprs_weather_object_position();
+    result |= test_aprs_position_with_ts();
+    result |= test_aprs_weather();
+    result |= test_aprs_object();
+    result |= test_aprs_mice();
+    result |= test_aprs_telemetry();
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Tests APRS Completed. %s\n", result == 0 ? "All tests passed" : "Some tests failed");
     printf("----------------------------------------------------------------------------------\n\n");
