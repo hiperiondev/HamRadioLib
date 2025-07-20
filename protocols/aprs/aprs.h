@@ -63,6 +63,10 @@ typedef struct {
     char symbol_table;
     char symbol_code;
     char *comment; // optional
+    char dti; // '!' or '='
+    bool has_course_speed;
+    int course; // 0-360 degrees
+    int speed; // knots, >=0
 } aprs_position_no_ts_t;
 
 /**
@@ -73,6 +77,41 @@ typedef struct {
     char *message; // up to 67 chars
     char *message_number; // optional, up to 5 chars
 } aprs_message_t;
+
+/**
+ * Structure for APRS weather report.
+ */
+typedef struct {
+    char timestamp[9]; // e.g., "12010000" (MMDDHHMM)
+    float temperature;
+    int wind_speed;
+    int wind_direction;
+} aprs_weather_report_t;
+
+/**
+ * Structure for APRS object report.
+ */
+typedef struct {
+    char name[10]; // null-terminated, up to 9 chars
+    char timestamp[8]; // e.g., "111111z" (DDHHMMz)
+    double latitude;
+    double longitude;
+    char symbol_table;
+    char symbol_code;
+} aprs_object_report_t;
+
+/**
+ * Structure for APRS timestamped position report.
+ */
+typedef struct {
+    char dti; // '/' or '@'
+    char timestamp[8]; // e.g., "111111z" (DDHHMMz)
+    double latitude;
+    double longitude;
+    char symbol_table;
+    char symbol_code;
+    char *comment; // optional
+} aprs_position_with_ts_t;
 
 // Function prototypes
 /**
@@ -167,6 +206,15 @@ int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data);
  * @return 0 on success, -1 on error
  */
 int aprs_decode_message(const char *info, aprs_message_t *data);
+
+double aprs_parse_lat(const char *str);
+double aprs_parse_lon(const char *str);
+int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report_t *data);
+int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data);
+int aprs_encode_object_report(char *info, size_t len, const aprs_object_report_t *data);
+int aprs_decode_object_report(const char *info, aprs_object_report_t *data);
+int aprs_encode_position_with_ts(char *info, size_t len, const aprs_position_with_ts_t *data);
+int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data);
 
 #endif
 

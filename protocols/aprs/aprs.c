@@ -29,6 +29,7 @@
 #include <string.h>
 #include <math.h>
 #include <stddef.h>
+#include <ctype.h>
 
 #include "common.h"
 #include "aprs.h"
@@ -63,6 +64,40 @@ static char* my_strndup(const char *s, size_t n) {
         dup[len] = '\0';
     }
     return dup;
+}
+
+// Function to parse latitude from APRS format
+double aprs_parse_lat(const char *str) {
+    if (strlen(str) != 8)
+        return NAN;
+    char deg[3], min[3], frac[3], dir;
+    if (sscanf(str, "%2s%2s.%2s%c", deg, min, frac, &dir) != 4)
+        return NAN;
+    double degrees = atof(deg);
+    double minutes = atof(min) + atof(frac) / 100.0;
+    double lat = degrees + minutes / 60.0;
+    if (dir == 'S')
+        lat = -lat;
+    else if (dir != 'N')
+        return NAN;
+    return lat;
+}
+
+// Function to parse longitude from APRS format
+double aprs_parse_lon(const char *str) {
+    if (strlen(str) != 9)
+        return NAN;
+    char deg[4], min[3], frac[3], dir;
+    if (sscanf(str, "%3s%2s.%2s%c", deg, min, frac, &dir) != 4)
+        return NAN;
+    double degrees = atof(deg);
+    double minutes = atof(min) + atof(frac) / 100.0;
+    double lon = degrees + minutes / 60.0;
+    if (dir == 'W')
+        lon = -lon;
+    else if (dir != 'E')
+        return NAN;
+    return lon;
 }
 
 int aprs_encode_address(char *buf, const aprs_address_t *addr, bool is_last, bool is_digipeater) {
@@ -146,46 +181,75 @@ char* lon_to_aprs(double lon) {
 }
 
 int aprs_encode_position_no_ts(char *info, size_t len, const aprs_position_no_ts_t *data) {
+    char dti = (data->dti == '!' || data->dti == '=') ? data->dti : '!';
+
     char *lat_str = lat_to_aprs(data->latitude);
     char *lon_str = lon_to_aprs(data->longitude);
-    if (!lat_str || !lon_str)
+    if (!lat_str || !lon_str) {
         return -1;
-    int ret = snprintf(info, len, "!%s%c%s%c%s", lat_str, data->symbol_table, lon_str, data->symbol_code, data->comment ? data->comment : "");
-    if (ret < 0 || (size_t) ret >= len)
+    }
+
+    int ret = snprintf(info, len, "%c%s%c%s%c", dti, lat_str, data->symbol_table, lon_str, data->symbol_code);
+    if (ret < 0 || (size_t) ret >= len) {
         return -1;
+    }
+
+    if (data->has_course_speed) {
+        if (data->course < 0 || data->course > 360 || data->speed < 0) {
+            return -1;
+        }
+        int ret2 = snprintf(info + ret, len - ret, "%03d/%03d", data->course, data->speed);
+        if (ret2 < 0 || (size_t) ret2 >= len - ret) {
+            return -1;
+        }
+        ret += ret2;
+    }
+
+    if (data->comment) {
+        int ret2 = snprintf(info + ret, len - ret, "%s", data->comment);
+        if (ret2 < 0 || (size_t) ret2 >= len - ret) {
+            return -1;
+        }
+        ret += ret2;
+    }
+
     return ret;
 }
 
 int aprs_encode_message(char *info, size_t len, const aprs_message_t *data) {
-    // Check if addressee is too long
-    bool too_long = true;
+    // Check if addressee is null-terminated within 9 characters
+    bool null_found = false;
     for (int i = 0; i < 9; i++) {
         if (data->addressee[i] == '\0') {
-            too_long = false;
+            null_found = true;
             break;
         }
     }
-    if (too_long && data->addressee[9] != '\0') {
-        return -1; // addressee is longer than 9 characters
+    if (!null_found && data->addressee[9] != '\0') {
+        return -1; // addressee exceeds 9 characters
     }
 
     // Check message length
-    if (data->message && strlen(data->message) > 67)
+    if (data->message && strlen(data->message) > 67) {
         return -1;
+    }
 
     // Check message_number length
-    if (data->message_number && strlen(data->message_number) > 5)
+    if (data->message_number && strlen(data->message_number) > 5) {
         return -1;
+    }
 
     // Encode the message
     int ret = snprintf(info, len, ":%-9s:%s", data->addressee, data->message ? data->message : "");
-    if (ret < 0 || (size_t) ret >= len)
+    if (ret < 0 || (size_t) ret >= len) {
         return -1;
+    }
 
     if (data->message_number) {
         int ret2 = snprintf(info + ret, len - ret, "{%s}", data->message_number);
-        if (ret2 < 0 || (size_t) ret2 >= len - ret)
+        if (ret2 < 0 || (size_t) ret2 >= len - ret) {
             return -1;
+        }
         ret += ret2;
     }
 
@@ -232,34 +296,76 @@ int aprs_decode_frame(const char *buf, size_t len, aprs_frame_t *frame) {
 }
 
 int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data) {
-    if (info[0] != '!')
+    size_t info_len = strlen(info);
+    if (info_len < 20) {
         return -1;
-    char lat_str[9], lon_str[10], symbol_table, symbol_code;
-    int ret = sscanf(info + 1, "%8s%c%9s%c", lat_str, &symbol_table, lon_str, &symbol_code);
-    if (ret != 4)
+    }
+
+    if (info[0] != '!' && info[0] != '=') {
         return -1;
-    int deg, min_int, min_frac;
-    char dir;
-    ret = sscanf(lat_str, "%2d%2d.%2d%c", &deg, &min_int, &min_frac, &dir);
-    if (ret != 4 || (dir != 'N' && dir != 'S'))
+    }
+    data->dti = info[0];
+
+    // Parse latitude: info[1] to info[8]
+    char lat_str[9];
+    strncpy(lat_str, info + 1, 8);
+    lat_str[8] = '\0';
+    data->latitude = aprs_parse_lat(lat_str);
+    if (isnan(data->latitude)) {
         return -1;
-    double min = min_int + min_frac / 100.0;
-    data->latitude = deg + min / 60.0;
-    if (dir == 'S')
-        data->latitude = -data->latitude;
-    ret = sscanf(lon_str, "%3d%2d.%2d%c", &deg, &min_int, &min_frac, &dir);
-    if (ret != 4 || (dir != 'E' && dir != 'W'))
+    }
+
+    // Symbol table: info[9]
+    data->symbol_table = info[9];
+
+    // Parse longitude: info[10] to info[18]
+    char lon_str[10];
+    strncpy(lon_str, info + 10, 9);
+    lon_str[9] = '\0';
+    data->longitude = aprs_parse_lon(lon_str);
+    if (isnan(data->longitude)) {
         return -1;
-    min = min_int + min_frac / 100.0;
-    data->longitude = deg + min / 60.0;
-    if (dir == 'W')
-        data->longitude = -data->longitude;
-    data->symbol_table = symbol_table;
-    data->symbol_code = symbol_code;
-    const char *comment_start = info + 1 + 8 + 1 + 9 + 1;
-    data->comment = my_strdup(comment_start);
-    if (!data->comment && *comment_start != '\0')
-        return -1;
+    }
+
+    // Symbol code: info[19]
+    data->symbol_code = info[19];
+
+    // Check for course/speed extension
+    if (info_len >= 27) {
+        // Check if info[20] to info[26] is ddd/ddd
+        bool is_extension = true;
+        for (int i = 0; i < 3; i++) {
+            if (!isdigit(info[20 + i])) {
+                is_extension = false;
+                break;
+            }
+        }
+        if (info[23] != '/') {
+            is_extension = false;
+        }
+        for (int i = 0; i < 3; i++) {
+            if (!isdigit(info[24 + i])) {
+                is_extension = false;
+                break;
+            }
+        }
+        if (is_extension) {
+            char course_str[4] = { info[20], info[21], info[22], '\0' };
+            char speed_str[4] = { info[24], info[25], info[26], '\0' };
+            data->course = atoi(course_str);
+            data->speed = atoi(speed_str);
+            data->has_course_speed = true;
+            // Comment starts at info + 27
+            data->comment = my_strdup(info + 27);
+        } else {
+            data->has_course_speed = false;
+            data->comment = my_strdup(info + 20);
+        }
+    } else {
+        data->has_course_speed = false;
+        data->comment = my_strdup(info + 20);
+    }
+
     return 0;
 }
 
@@ -296,5 +402,195 @@ int aprs_decode_message(const char *info, aprs_message_t *data) {
     } else {
         data->message_number = NULL;
     }
+    return 0;
+}
+
+int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report_t *data) {
+    // Validate ranges
+    if (data->wind_speed < 0 || data->wind_direction < 0 || data->wind_direction > 360) {
+        return -1;
+    }
+
+    // Format: _MMDDHHMMcDDD/SSS (simplified weather report)
+    int ret = snprintf(info, len, "_12010000c%03d/%03d", data->wind_direction, data->wind_speed);
+    if (ret < 0 || (size_t) ret >= len) {
+        return -1;
+    }
+
+    return ret;
+}
+
+int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
+    if (info[0] != '_' || strlen(info) < 17) {
+        return -1;
+    }
+
+    // Check for 'c' at position 9
+    if (info[9] != 'c') {
+        return -1;
+    }
+
+    // Check for '/' at position 13
+    if (info[13] != '/') {
+        return -1;
+    }
+
+    // Extract wind direction: positions 10-12
+    char dir_str[4] = { info[10], info[11], info[12], '\0' };
+
+    // Extract wind speed: positions 14-16
+    char speed_str[4] = { info[14], info[15], info[16], '\0' };
+
+    // Check if all characters are digits
+    for (int i = 0; i < 3; i++) {
+        if (!isdigit(dir_str[i]) || !isdigit(speed_str[i])) {
+            return -1;
+        }
+    }
+
+    data->wind_direction = atoi(dir_str);
+    data->wind_speed = atoi(speed_str);
+    data->temperature = 0.0; // Not parsed in this simplified version
+
+    if (data->wind_direction > 360 || data->wind_speed < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int aprs_encode_object_report(char *info, size_t len, const aprs_object_report_t *data) {
+    char *lat_str = lat_to_aprs(data->latitude);
+    char *lon_str = lon_to_aprs(data->longitude);
+    if (!lat_str || !lon_str) {
+        return -1;
+    }
+
+    int ret = snprintf(info, len, ";%-9s*111111z%s%c%s%c", data->name, lat_str, data->symbol_table, lon_str, data->symbol_code);
+    if (ret < 0 || (size_t) ret >= len) {
+        return -1;
+    }
+
+    return ret;
+}
+
+int aprs_decode_object_report(const char *info, aprs_object_report_t *data) {
+    size_t info_len = strlen(info);
+    if (info[0] != ';' || info_len < 37) {
+        return -1;
+    }
+
+    // Extract name (positions 1-9)
+    strncpy(data->name, info + 1, 9);
+    data->name[9] = '\0';
+    // Trim trailing spaces
+    for (int i = 8; i >= 0; i--) {
+        if (data->name[i] != ' ') {
+            data->name[i + 1] = '\0';
+            break;
+        }
+        if (i == 0) {
+            data->name[0] = '\0';
+        }
+    }
+
+    // Check status and timestamp (simplified: assume '*111111z')
+    if (info[10] != '*' || info[17] != 'z') {
+        return -1;
+    }
+
+    // Parse latitude (positions 18-25)
+    char lat_str[9];
+    strncpy(lat_str, info + 18, 8);
+    lat_str[8] = '\0';
+    data->latitude = aprs_parse_lat(lat_str);
+    if (isnan(data->latitude)) {
+        return -1;
+    }
+
+    // Symbol table (position 26)
+    data->symbol_table = info[26];
+
+    // Parse longitude (positions 27-35)
+    char lon_str[10];
+    strncpy(lon_str, info + 27, 9);
+    lon_str[9] = '\0';
+    data->longitude = aprs_parse_lon(lon_str);
+    if (isnan(data->longitude)) {
+        return -1;
+    }
+
+    // Symbol code (position 36)
+    data->symbol_code = info[36];
+
+    return 0;
+}
+
+int aprs_encode_position_with_ts(char *info, size_t len, const aprs_position_with_ts_t *data) {
+    char dti = (data->dti == '/' || data->dti == '@') ? data->dti : '/';
+    char *lat_str = lat_to_aprs(data->latitude);
+    char *lon_str = lon_to_aprs(data->longitude);
+    if (!lat_str || !lon_str || strlen(data->timestamp) != 7) {
+        return -1;
+    }
+
+    int ret = snprintf(info, len, "%c%s%s%c%s%c%s", dti, data->timestamp, lat_str, data->symbol_table, lon_str, data->symbol_code,
+            data->comment ? data->comment : "");
+    if (ret < 0 || (size_t) ret >= len) {
+        return -1;
+    }
+
+    return ret;
+}
+
+int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data) {
+    if (strlen(info) < 26 || (info[0] != '/' && info[0] != '@')) {
+        return -1;
+    }
+
+    data->dti = info[0];
+
+    // Extract timestamp (positions 1-7)
+    strncpy(data->timestamp, info + 1, 7);
+    data->timestamp[7] = '\0';
+    for (int i = 0; i < 7; i++) {
+        if (!isdigit(data->timestamp[i]) && data->timestamp[i] != 'z') {
+            return -1;
+        }
+    }
+    if (data->timestamp[6] != 'z') {
+        return -1; // Must end with 'z' for simplified format
+    }
+
+    // Parse latitude (positions 8-15)
+    char lat_str[9];
+    strncpy(lat_str, info + 8, 8);
+    lat_str[8] = '\0';
+    data->latitude = aprs_parse_lat(lat_str);
+    if (isnan(data->latitude)) {
+        return -1;
+    }
+
+    // Symbol table (position 16)
+    data->symbol_table = info[16];
+
+    // Parse longitude (positions 17-25)
+    char lon_str[10];
+    strncpy(lon_str, info + 17, 9);
+    lon_str[9] = '\0';
+    data->longitude = aprs_parse_lon(lon_str);
+    if (isnan(data->longitude)) {
+        return -1;
+    }
+
+    // Symbol code (position 26)
+    data->symbol_code = info[26];
+
+    // Comment (position 27 onwards)
+    data->comment = my_strdup(info + 27);
+    if (!data->comment && info[27] != '\0') {
+        return -1;
+    }
+
     return 0;
 }

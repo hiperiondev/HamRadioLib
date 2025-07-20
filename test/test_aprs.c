@@ -308,7 +308,10 @@ int test_aprs_edge_cases() {
 
     // Test 16: Message with long addressee
     {
-        aprs_message_t msg = { .addressee = "TOOLONGADD", .message = "Test", .message_number = NULL };
+        aprs_message_t msg;
+        memcpy(msg.addressee, "TOOLONGADD", 10); // 10 chars, no null terminator
+        msg.message = "Test";
+        msg.message_number = NULL;
         char info[100];
         int len = aprs_encode_message(info, 100, &msg);
         TEST_ASSERT(len == -1, "Encoding long addressee should fail", err);
@@ -333,6 +336,65 @@ int test_aprs_edge_cases() {
     return err;
 }
 
+int test_aprs_new_packet_types() {
+    uint8_t err = 0;
+
+    // Test: Weather report encoding and decoding
+    {
+        aprs_weather_report_t weather = { .temperature = 25.0, .wind_speed = 10, .wind_direction = 180 };
+        char info[100];
+        int len = aprs_encode_weather_report(info, 100, &weather);
+        TEST_ASSERT(len == 17, "Weather report encoding length incorrect", err);
+        TEST_ASSERT(strcmp(info, "_12010000c180/010") == 0, "Weather report encoding incorrect", err);
+        aprs_weather_report_t decoded;
+        int ret = aprs_decode_weather_report(info, &decoded);
+        TEST_ASSERT(ret == 0, "Weather report decoding failed", err);
+        TEST_ASSERT(fabs(decoded.temperature - 0.0) < 0.001, "Temperature should be 0 (not parsed)", err);
+        TEST_ASSERT(decoded.wind_speed == 10, "Wind speed mismatch", err);
+        TEST_ASSERT(decoded.wind_direction == 180, "Wind direction mismatch", err);
+    }
+
+    // Test: Object report encoding and decoding
+    {
+        aprs_object_report_t obj = { .name = "TESTOBJ  ", .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/', .symbol_code = '>' };
+        char info[100];
+        int len = aprs_encode_object_report(info, 100, &obj);
+        TEST_ASSERT(len == 37, "Object report encoding length incorrect", err);
+        TEST_ASSERT(strcmp(info, ";TESTOBJ  *111111z3746.49N/12225.16W>") == 0, "Object report encoding incorrect", err);
+        aprs_object_report_t decoded;
+        int ret = aprs_decode_object_report(info, &decoded);
+        TEST_ASSERT(ret == 0, "Object report decoding failed", err);
+        TEST_ASSERT(strcmp(decoded.name, "TESTOBJ") == 0, "Object name mismatch", err);
+        TEST_ASSERT(fabs(decoded.latitude - 37.7749) < 0.001, "Object latitude mismatch", err);
+        TEST_ASSERT(fabs(decoded.longitude + 122.4194) < 0.001, "Object longitude mismatch", err);
+        TEST_ASSERT(decoded.symbol_table == '/', "Object symbol table mismatch", err);
+        TEST_ASSERT(decoded.symbol_code == '>', "Object symbol code mismatch", err);
+    }
+
+    // Test: Timestamped position report encoding and decoding
+    {
+        aprs_position_with_ts_t pos = { .timestamp = "111111z", .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/', .symbol_code = '>', .comment =
+                "Moving", .dti = '@' };
+        char info[100];
+        int len = aprs_encode_position_with_ts(info, 100, &pos);
+        TEST_ASSERT(len == 33, "Timestamped position encoding length incorrect", err);
+        TEST_ASSERT(strcmp(info, "@111111z3746.49N/12225.16W>Moving") == 0, "Timestamped position encoding incorrect", err);
+        aprs_position_with_ts_t decoded;
+        int ret = aprs_decode_position_with_ts(info, &decoded);
+        TEST_ASSERT(ret == 0, "Timestamped position decoding failed", err);
+        TEST_ASSERT(decoded.dti == '@', "DTI mismatch", err);
+        TEST_ASSERT(strcmp(decoded.timestamp, "111111z") == 0, "Timestamp mismatch", err);
+        TEST_ASSERT(fabs(decoded.latitude - 37.7749) < 0.001, "Latitude mismatch", err);
+        TEST_ASSERT(fabs(decoded.longitude + 122.4194) < 0.001, "Longitude mismatch", err);
+        TEST_ASSERT(decoded.symbol_table == '/', "Symbol table mismatch", err);
+        TEST_ASSERT(decoded.symbol_code == '>', "Symbol code mismatch", err);
+        TEST_ASSERT(strcmp(decoded.comment, "Moving") == 0, "Comment mismatch", err);
+        free(decoded.comment);
+    }
+
+    return err;
+}
+
 int test_aprs_main() {
     int result = 0;
     printf("\n----------------------------------------------------------------------------------\n");
@@ -344,6 +406,7 @@ int test_aprs_main() {
     result |= test_aprs_message_encoding_decoding();
     result |= test_aprs_real_packets();
     result |= test_aprs_edge_cases();
+    result |= test_aprs_new_packet_types();
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Tests APRS Completed. %s\n", result == 0 ? "All tests passed" : "Some tests failed");
     printf("----------------------------------------------------------------------------------\n\n");
