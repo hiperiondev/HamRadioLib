@@ -216,12 +216,53 @@ int test_aprs_position_encoding_decoding() {
         TEST_ASSERT(ret == -1, "Should fail to decode invalid course", err);
     }
 
-    // Test: Decode position with negative speed
+    // Test: Decode position with invalid speed format
     {
         const char *info = "!3746.49N/12225.16W>180/-01";
         aprs_position_no_ts_t pos;
         int ret = aprs_decode_position_no_ts(info, &pos);
-        TEST_ASSERT(ret == -1, "Should fail to decode negative speed", err);
+        TEST_ASSERT(ret == 0, "Should decode with invalid speed as comment", err);
+        TEST_ASSERT(pos.has_course_speed == false, "has_course_speed should be false", err);
+        TEST_ASSERT(strcmp(pos.comment, "180/-01") == 0, "Comment should include invalid extension", err);
+        free(pos.comment);
+    }
+
+    // Test: Position with ambiguity level 3
+    {
+        aprs_position_no_ts_t pos = { .latitude = 49.5, .longitude = -72.75, .symbol_table = '/', .symbol_code = '-', .comment = "AMB3" };
+        char info[100];
+        int len = aprs_encode_position_no_ts(info, 100, &pos);
+        TEST_ASSERT(len == 20, "Position encoding length with ambiguity incorrect", err);
+        TEST_ASSERT(strcmp(info, "!493 .  N/0724 .  W-") == 0, "Encoded position with ambiguity incorrect", err);
+        aprs_position_no_ts_t decoded;
+        int ret = aprs_decode_position_no_ts(info, &decoded);
+        TEST_ASSERT(ret == 0, "Position decoding with ambiguity failed", err);
+        TEST_ASSERT(fabs(decoded.latitude - (49 + (35.0 / 60))) < 0.001, "Decoded latitude with ambiguity incorrect", err);
+        TEST_ASSERT(fabs(decoded.longitude - (-72 - (45.0 / 60))) < 0.001, "Decoded longitude with ambiguity incorrect", err);
+        TEST_ASSERT(decoded.symbol_table == '/', "Symbol table incorrect", err);
+        TEST_ASSERT(decoded.symbol_code == '-', "Symbol code incorrect", err);
+        TEST_ASSERT(strcmp(decoded.comment, "AMB3") == 0, "Ambiguity comment incorrect", err);
+        free(decoded.comment);
+    }
+
+    // Test: Position with ambiguity level 4 and course/speed
+    {
+        aprs_position_no_ts_t pos = { .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/', .symbol_code = '>', .comment = "AMB4",
+                .has_course_speed = true, .course = 180, .speed = 10 };
+        char info[100];
+        int len = aprs_encode_position_no_ts(info, 100, &pos);
+        TEST_ASSERT(len == 27, "Position encoding length with ambiguity and course/speed incorrect", err);
+        TEST_ASSERT(strcmp(info, "!37  .  N/122  .  W>180/010") == 0, "Encoded position with ambiguity and course/speed incorrect", err);
+        aprs_position_no_ts_t decoded;
+        int ret = aprs_decode_position_no_ts(info, &decoded);
+        TEST_ASSERT(ret == 0, "Position decoding with ambiguity and course/speed failed", err);
+        TEST_ASSERT(fabs(decoded.latitude - (37 + (30.0 / 60))) < 0.001, "Decoded latitude with ambiguity incorrect", err);
+        TEST_ASSERT(fabs(decoded.longitude - (-122 - (30.0 / 60))) < 0.001, "Decoded longitude with ambiguity incorrect", err);
+        TEST_ASSERT(decoded.has_course_speed == true, "has_course_speed should be true", err);
+        TEST_ASSERT(decoded.course == 180, "Course mismatch", err);
+        TEST_ASSERT(decoded.speed == 10, "Speed mismatch", err);
+        TEST_ASSERT(strcmp(decoded.comment, "AMB4") == 0, "Ambiguity comment incorrect", err);
+        free(decoded.comment);
     }
 
     return err;
@@ -327,13 +368,13 @@ int test_aprs_edge_cases() {
 
     // Test 14: Invalid latitude
     {
-        char *lat_str = lat_to_aprs(91.0);
+        char *lat_str = lat_to_aprs(91.0, 0);
         TEST_ASSERT(lat_str == NULL, "Latitude > 90 should return NULL", err);
     }
 
     // Test 15: Invalid longitude
     {
-        char *lon_str = lon_to_aprs(-181.0);
+        char *lon_str = lon_to_aprs(-181.0, 0);
         TEST_ASSERT(lon_str == NULL, "Longitude < -180 should return NULL", err);
     }
 

@@ -161,14 +161,14 @@ int aprs_encode_frame(char *buf, size_t buf_len, const aprs_frame_t *frame);
  * @param lat Latitude in degrees
  * @return Static string or NULL on error
  */
-char* lat_to_aprs(double lat);
+char* lat_to_aprs(double lat, int ambiguity);
 
 /**
  * Convert longitude to APRS format (dddmm.mmE/W).
  * @param lon Longitude in degrees
  * @return Static string or NULL on error
  */
-char* lon_to_aprs(double lon);
+char* lon_to_aprs(double lon, int ambiguity);
 
 /**
  * Encode an APRS position report without timestamp.
@@ -222,8 +222,8 @@ int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data);
  */
 int aprs_decode_message(const char *info, aprs_message_t *data);
 
-double aprs_parse_lat(const char *str);
-double aprs_parse_lon(const char *str);
+double aprs_parse_lat(const char *str, int *ambiguity);
+double aprs_parse_lon(const char *str, int *ambiguity);
 int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report_t *data);
 int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data);
 int aprs_encode_object_report(char *info, size_t len, const aprs_object_report_t *data);
