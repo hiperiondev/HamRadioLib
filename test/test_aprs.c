@@ -2,11 +2,6 @@
  * Copyright 2025 Emiliano Augusto Gonzalez (egonzalez . hiperion @ gmail . com))
  * * Project Site: https://github.com/hiperiondev/HamRadioLib *
  *
- * This is based on other projects:
- *    Asynchronous AX.25 library using asyncio: https://github.com/sjlongland/aioax25/
- *
- *    please contact their authors for more information.
- *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 3, or (at your option)
@@ -191,6 +186,42 @@ int test_aprs_position_encoding_decoding() {
         TEST_ASSERT(fabs(decoded.longitude - 135.5) < 0.001, "Decoded longitude incorrect", err);
         TEST_ASSERT(decoded.comment != NULL && decoded.comment[0] == '\0', "Comment should be empty", err);
         free(decoded.comment);
+    }
+
+    // Test: Position with course 360
+    {
+        aprs_position_no_ts_t pos = { .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/', .symbol_code = '>', .comment = NULL, .dti = '!',
+                .has_course_speed = true, .course = 360, .speed = 0 };
+        char info[100];
+        int len = aprs_encode_position_no_ts(info, 100, &pos);
+        TEST_ASSERT(len == 27, "Position encoding length incorrect", err);
+        TEST_ASSERT(strncmp(info, "!3746.49N/12225.16W>000/000", 27) == 0, "Encoded position with course 360 incorrect", err);
+    }
+
+    // Test: Position with negative course
+    {
+        aprs_position_no_ts_t pos = { .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/', .symbol_code = '>', .comment = NULL, .dti = '!',
+                .has_course_speed = true, .course = -10, .speed = 0 };
+        char info[100];
+        int len = aprs_encode_position_no_ts(info, 100, &pos);
+        TEST_ASSERT(len == 27, "Position encoding length incorrect", err);
+        TEST_ASSERT(strncmp(info, "!3746.49N/12225.16W>350/000", 27) == 0, "Encoded position with negative course incorrect", err);
+    }
+
+    // Test: Decode position with invalid course
+    {
+        const char *info = "!3746.49N/12225.16W>999/000";
+        aprs_position_no_ts_t pos;
+        int ret = aprs_decode_position_no_ts(info, &pos);
+        TEST_ASSERT(ret == -1, "Should fail to decode invalid course", err);
+    }
+
+    // Test: Decode position with negative speed
+    {
+        const char *info = "!3746.49N/12225.16W>180/-01";
+        aprs_position_no_ts_t pos;
+        int ret = aprs_decode_position_no_ts(info, &pos);
+        TEST_ASSERT(ret == -1, "Should fail to decode negative speed", err);
     }
 
     return err;
@@ -507,7 +538,7 @@ int test_aprs_mice() {
     bool ns, long_offset, we;
     int ret = aprs_decode_mice_destination(dest_str, &mice, &message_bits, &ns, &long_offset, &we);
     TEST_ASSERT(ret == 0, "Failed to decode Mic-E destination", err);
-    ret = aprs_decode_mice_info((const char *)info, sizeof(info) - 1, &mice, long_offset, we);
+    ret = aprs_decode_mice_info((const char*) info, sizeof(info) - 1, &mice, long_offset, we);
     TEST_ASSERT(ret == 0, "Failed to decode Mic-E info", err);
 
     // Set message_code based on message_bits and info type

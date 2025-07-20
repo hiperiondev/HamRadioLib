@@ -2,11 +2,6 @@
  * Copyright 2025 Emiliano Augusto Gonzalez (egonzalez . hiperion @ gmail . com))
  * * Project Site: https://github.com/hiperiondev/HamRadioLib *
  *
- * This is based on other projects:
- *    Asynchronous AX.25 library using asyncio: https://github.com/sjlongland/aioax25/
- *
- *    please contact their authors for more information.
- *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 3, or (at your option)
@@ -204,10 +199,13 @@ int aprs_encode_position_no_ts(char *info, size_t len, const aprs_position_no_ts
     }
 
     if (data->has_course_speed) {
-        if (data->course < 0 || data->course > 360 || data->speed < 0) {
-            return -1;
-        }
-        int ret2 = snprintf(info + ret, len - ret, "%03d/%03d", data->course, data->speed);
+        int course = data->course % 360;
+        if (course < 0)
+            course += 360;
+        int speed = data->speed;
+        if (speed < 0)
+            speed = 0;
+        int ret2 = snprintf(info + ret, len - ret, "%03d/%03d", course, speed);
         if (ret2 < 0 || (size_t) ret2 >= len - ret) {
             return -1;
         }
@@ -312,41 +310,50 @@ int aprs_decode_frame(const char *buf, size_t len, aprs_frame_t *frame) {
 int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data) {
     size_t info_len = strlen(info);
     if (info_len < 20) {
-        return -1;
+        return -1; // Minimum length for position without extension
     }
 
     if (info[0] != '!' && info[0] != '=') {
-        return -1;
+        return -1; // Invalid data type identifier
     }
     data->dti = info[0];
 
-    // Parse latitude: info[1] to info[8]
+    // Parse latitude: info[1] to info[8] (ddmm.mmN/S)
     char lat_str[9];
     strncpy(lat_str, info + 1, 8);
     lat_str[8] = '\0';
     data->latitude = aprs_parse_lat(lat_str);
     if (isnan(data->latitude)) {
-        return -1;
+        return -1; // Invalid latitude
     }
 
     // Symbol table: info[9]
+    if (info[9] != '/' && info[9] != '\\') {
+        return -1; // Invalid symbol table
+    }
     data->symbol_table = info[9];
 
-    // Parse longitude: info[10] to info[18]
+    // Parse longitude: info[10] to info[18] (dddmm.mmE/W)
     char lon_str[10];
     strncpy(lon_str, info + 10, 9);
     lon_str[9] = '\0';
     data->longitude = aprs_parse_lon(lon_str);
     if (isnan(data->longitude)) {
-        return -1;
+        return -1; // Invalid longitude
     }
 
     // Symbol code: info[19]
+    if (!isprint(info[19])) {
+        return -1; // Invalid symbol code
+    }
     data->symbol_code = info[19];
 
-    // Check for course/speed extension
+    // Check for course/speed extension (ddd/ddd or ddd/-dd)
+    data->has_course_speed = false;
+    data->course = 0;
+    data->speed = 0;
     if (info_len >= 27) {
-        // Check if info[20] to info[26] is ddd/ddd
+        // Check format: three digits, a slash, then three characters (digits or '-dd')
         bool is_extension = true;
         for (int i = 0; i < 3; i++) {
             if (!isdigit(info[20 + i])) {
@@ -357,27 +364,43 @@ int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data) {
         if (info[23] != '/') {
             is_extension = false;
         }
-        for (int i = 0; i < 3; i++) {
-            if (!isdigit(info[24 + i])) {
-                is_extension = false;
-                break;
-            }
+        // Speed part can be three digits or '-dd'
+        if (!(isdigit(info[24]) && isdigit(info[25]) && isdigit(info[26])) && !(info[24] == '-' && isdigit(info[25]) && isdigit(info[26]))) {
+            is_extension = false;
         }
         if (is_extension) {
             char course_str[4] = { info[20], info[21], info[22], '\0' };
-            char speed_str[4] = { info[24], info[25], info[26], '\0' };
+            char speed_str[4];
+            if (info[24] == '-') {
+                speed_str[0] = '-';
+                speed_str[1] = info[25];
+                speed_str[2] = info[26];
+                speed_str[3] = '\0';
+            } else {
+                speed_str[0] = info[24];
+                speed_str[1] = info[25];
+                speed_str[2] = info[26];
+                speed_str[3] = '\0';
+            }
             data->course = atoi(course_str);
             data->speed = atoi(speed_str);
+            if (data->course > 359 || data->course < 0) { // Course must be 0–359
+                return -1;
+            }
+            if (data->speed < 0) { // Speed must be non-negative
+                return -1;
+            }
             data->has_course_speed = true;
-            // Comment starts at info + 27
-            data->comment = my_strdup(info + 27);
+            data->comment = my_strdup(info + 27); // Comment starts after course/speed
         } else {
-            data->has_course_speed = false;
-            data->comment = my_strdup(info + 20);
+            data->comment = my_strdup(info + 20); // Treat invalid extension as comment
         }
     } else {
-        data->has_course_speed = false;
-        data->comment = my_strdup(info + 20);
+        data->comment = my_strdup(info + 20); // Comment starts after symbol code
+    }
+
+    if (!data->comment) {
+        return -1; // Memory allocation failure
     }
 
     return 0;

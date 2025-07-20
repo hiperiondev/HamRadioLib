@@ -2,11 +2,6 @@
  * Copyright 2025 Emiliano Augusto Gonzalez (egonzalez . hiperion @ gmail . com))
  * * Project Site: https://github.com/hiperiondev/HamRadioLib *
  *
- * This is based on other projects:
- *    Asynchronous AX.25 library using asyncio: https://github.com/sjlongland/aioax25/
- *
- *    please contact their authors for more information.
- *
  * This is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 3, or (at your option)
