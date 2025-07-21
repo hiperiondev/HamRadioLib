@@ -26,10 +26,8 @@
 #include <math.h>
 
 #include "test_common.h"
-#include "aprs.h"
-#include "ax25.h"
-#include "hdlc.h"
 #include "utils.h"
+#include "aprs.h"
 
 static uint32_t assert_count = 0;
 
@@ -41,123 +39,10 @@ static void trim_trailing_spaces(char *str) {
     }
 }
 
-int test_aprs_address_encoding_decoding() {
-    uint8_t err = 0;
-
-    // Test 1: Destination address "APRS" (no SSID, not last)
-    {
-        aprs_address_t addr = { .callsign = "APRS  ", .ssid = 0 };
-        char buf[7];
-        aprs_encode_address(buf, &addr, false, false);
-        uint8_t expected[7] = { ('A' << 1), ('P' << 1), ('R' << 1), ('S' << 1), (' ' << 1), (' ' << 1), 0 };
-        for (int i = 0; i < 7; i++) {
-            TEST_ASSERT((uint8_t )buf[i] == expected[i], "Destination address encoding incorrect", err);
-        }
-        aprs_address_t decoded;
-        bool is_last;
-        aprs_decode_address(buf, &decoded, &is_last);
-        TEST_ASSERT(strcmp(decoded.callsign, "APRS") == 0, "Decoded destination callsign incorrect", err);
-        TEST_ASSERT(decoded.ssid == 0, "Decoded destination SSID incorrect", err);
-        TEST_ASSERT(is_last == false, "is_last should be false for destination", err);
-    }
-
-    // Test 2: Source address "N0CALL-7" (last, no digipeaters)
-    {
-        aprs_address_t addr = { .callsign = "N0CALL", .ssid = 7 };
-        char buf[7];
-        aprs_encode_address(buf, &addr, true, false);
-        uint8_t expected[7] = { ('N' << 1), ('0' << 1), ('C' << 1), ('A' << 1), ('L' << 1), ('L' << 1), (7 << 1) | 0x01 };
-        for (int i = 0; i < 7; i++) {
-            TEST_ASSERT((uint8_t )buf[i] == expected[i], "Source address encoding incorrect", err);
-        }
-        aprs_address_t decoded;
-        bool is_last;
-        aprs_decode_address(buf, &decoded, &is_last);
-        char trimmed[7];
-        strncpy(trimmed, decoded.callsign, 6);
-        trimmed[6] = '\0';
-        trim_trailing_spaces(trimmed);
-        TEST_ASSERT(strcmp(trimmed, "N0CALL") == 0, "Decoded source callsign incorrect", err);
-        TEST_ASSERT(decoded.ssid == 7, "Decoded source SSID incorrect", err);
-        TEST_ASSERT(is_last == true, "is_last should be true for source", err);
-    }
-
-    // Test 3: Digipeater "WIDE1-1" (not last)
-    {
-        aprs_address_t addr = { .callsign = "WIDE1 ", .ssid = 1 };
-        char buf[7];
-        aprs_encode_address(buf, &addr, false, true);
-        uint8_t expected[7] = { ('W' << 1), ('I' << 1), ('D' << 1), ('E' << 1), ('1' << 1), (' ' << 1), (1 << 1) };
-        for (int i = 0; i < 7; i++) {
-            TEST_ASSERT((uint8_t )buf[i] == expected[i], "Digipeater address encoding incorrect", err);
-        }
-        aprs_address_t decoded;
-        bool is_last;
-        aprs_decode_address(buf, &decoded, &is_last);
-        char trimmed[7];
-        strncpy(trimmed, decoded.callsign, 6);
-        trimmed[6] = '\0';
-        trim_trailing_spaces(trimmed);
-        TEST_ASSERT(strcmp(trimmed, "WIDE1") == 0, "Decoded digipeater callsign incorrect", err);
-        TEST_ASSERT(decoded.ssid == 1, "Decoded digipeater SSID incorrect", err);
-        TEST_ASSERT(is_last == false, "is_last should be false for digipeater", err);
-    }
-
-    return err;
-}
-
-int test_aprs_frame_encoding_decoding() {
-    uint8_t err = 0;
-
-    // Test 4: Frame with no digipeaters (APRS > N0CALL-7, info="!4903.50N/07201.75W-")
-    {
-        aprs_frame_t frame = { .destination = { .callsign = "APRS  ", .ssid = 0 }, .source = { .callsign = "N0CALL", .ssid = 7 }, .num_digipeaters = 0, .info =
-                "!4903.50N/07201.75W-", .info_len = 20 };
-        char buf[256];
-        int len = aprs_encode_frame(buf, 256, &frame);
-        TEST_ASSERT(len == 40, "Frame encoding length incorrect", err);
-        aprs_frame_t decoded;
-        int decode_len = aprs_decode_frame(buf, len, &decoded);
-        TEST_ASSERT(decode_len == len, "Frame decoding length mismatch", err);
-        char trimmed_dest[7];
-        strncpy(trimmed_dest, decoded.destination.callsign, 6);
-        trimmed_dest[6] = '\0';
-        trim_trailing_spaces(trimmed_dest);
-        TEST_ASSERT(strcmp(trimmed_dest, "APRS") == 0, "Decoded destination callsign mismatch", err);
-        TEST_ASSERT(decoded.source.ssid == 7, "Decoded source SSID mismatch", err);
-        TEST_ASSERT(decoded.num_digipeaters == 0, "Number of digipeaters mismatch", err);
-        TEST_ASSERT(decoded.info_len == 20, "Info length mismatch", err);
-        TEST_ASSERT(strncmp(decoded.info, "!4903.50N/07201.75W-", 20) == 0, "Info content mismatch", err);
-        free(decoded.info);
-    }
-
-    // Test 5: Frame with one digipeater (APRS > N0CALL-7 via WIDE1-1)
-    {
-        aprs_frame_t frame = { .destination = { .callsign = "APRS  ", .ssid = 0 }, .source = { .callsign = "N0CALL", .ssid = 7 }, .digipeaters = { { .callsign =
-                "WIDE1 ", .ssid = 1 } }, .num_digipeaters = 1, .info = ":WB2OSZ-7 :Hello", .info_len = 16 };
-        char buf[256];
-        int len = aprs_encode_frame(buf, 256, &frame);
-        TEST_ASSERT(len == 43, "Frame with digipeater encoding length incorrect", err);
-        aprs_frame_t decoded;
-        int decode_len = aprs_decode_frame(buf, len, &decoded);
-        TEST_ASSERT(decode_len == len, "Frame decoding length mismatch", err);
-        TEST_ASSERT(decoded.num_digipeaters == 1, "Number of digipeaters mismatch", err);
-        char trimmed_digi[7];
-        strncpy(trimmed_digi, decoded.digipeaters[0].callsign, 6);
-        trimmed_digi[6] = '\0';
-        trim_trailing_spaces(trimmed_digi);
-        TEST_ASSERT(strcmp(trimmed_digi, "WIDE1") == 0, "Digipeater callsign mismatch", err);
-        TEST_ASSERT(decoded.info_len == 16, "Info length mismatch", err);
-        free(decoded.info);
-    }
-
-    return err;
-}
-
 int test_aprs_position_encoding_decoding() {
     uint8_t err = 0;
 
-    // Test 6: Position report (49.5N, -72.75W)
+    // Test 1: Position report (49.5N, -72.75W)
     {
         aprs_position_no_ts_t pos = { .latitude = 49.5, .longitude = -72.75, .symbol_table = '/', .symbol_code = '-', .comment = "Test" };
         char info[100];
@@ -175,7 +60,7 @@ int test_aprs_position_encoding_decoding() {
         free(decoded.comment);
     }
 
-    // Test 7: Position with no comment
+    // Test 2: Position with no comment
     {
         aprs_position_no_ts_t pos = { .latitude = -35.25, .longitude = 135.5, .symbol_table = '/', .symbol_code = '>', .comment = NULL };
         char info[100];
@@ -191,7 +76,7 @@ int test_aprs_position_encoding_decoding() {
         free(decoded.comment);
     }
 
-    // Test: Position with course 360
+    // Test 3: Position with course 360
     {
         aprs_position_no_ts_t pos = { .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/', .symbol_code = '>', .comment = NULL, .dti = '!',
                 .has_course_speed = true, .course = 360, .speed = 0 };
@@ -201,7 +86,7 @@ int test_aprs_position_encoding_decoding() {
         TEST_ASSERT(strncmp(info, "!3746.49N/12225.16W>000/000", 27) == 0, "Encoded position with course 360 incorrect", err);
     }
 
-    // Test: Position with negative course
+    // Test 4: Position with negative course
     {
         aprs_position_no_ts_t pos = { .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/', .symbol_code = '>', .comment = NULL, .dti = '!',
                 .has_course_speed = true, .course = -10, .speed = 0 };
@@ -211,7 +96,7 @@ int test_aprs_position_encoding_decoding() {
         TEST_ASSERT(strncmp(info, "!3746.49N/12225.16W>350/000", 27) == 0, "Encoded position with negative course incorrect", err);
     }
 
-    // Test: Decode position with invalid course
+    // Test 5: Decode position with invalid course
     {
         const char *info = "!3746.49N/12225.16W>999/000";
         aprs_position_no_ts_t pos;
@@ -219,7 +104,7 @@ int test_aprs_position_encoding_decoding() {
         TEST_ASSERT(ret == -1, "Should fail to decode invalid course", err);
     }
 
-    // Test: Decode position with invalid speed format
+    // Test 6: Decode position with invalid speed format
     {
         const char *info = "!3746.49N/12225.16W>180/-01";
         aprs_position_no_ts_t pos;
@@ -230,7 +115,7 @@ int test_aprs_position_encoding_decoding() {
         free(pos.comment);
     }
 
-    // Test: Position with ambiguity level 3
+    // Test 7: Position with ambiguity level 3
     {
         aprs_position_no_ts_t pos = { .latitude = 49.5, .longitude = -72.75, .symbol_table = '/', .symbol_code = '-', .comment = "AMB3" };
         char info[100];
@@ -248,7 +133,7 @@ int test_aprs_position_encoding_decoding() {
         free(decoded.comment);
     }
 
-    // Test: Position with ambiguity level 4 and course/speed
+    // Test 8: Position with ambiguity level 4 and course/speed
     {
         aprs_position_no_ts_t pos = { .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/', .symbol_code = '>', .comment = "AMB4",
                 .has_course_speed = true, .course = 180, .speed = 10 };
@@ -274,7 +159,7 @@ int test_aprs_position_encoding_decoding() {
 int test_aprs_message_encoding_decoding() {
     uint8_t err = 0;
 
-    // Test 8: Message with number
+    // Test 1: Message with number
     {
         aprs_message_t msg = { .addressee = "WB2OSZ-7", .message = "Hello", .message_number = "001" };
         char info[100];
@@ -292,7 +177,7 @@ int test_aprs_message_encoding_decoding() {
         free(decoded.message_number);
     }
 
-    // Test 9: Message without number
+    // Test 2: Message without number
     {
         aprs_message_t msg = { .addressee = "N2GH    ", .message = "Hi, Dave!", .message_number = NULL };
         char info[100];
@@ -315,7 +200,7 @@ int test_aprs_message_encoding_decoding() {
 int test_aprs_real_packets() {
     uint8_t err = 0;
 
-    // Test 11: Real position report "!4903.50N/07201.75W-Test /A=001234"
+    // Test 1: Real position report "!4903.50N/07201.75W-Test /A=001234"
     {
         const char *info = "!4903.50N/07201.75W-Test /A=001234";
         aprs_position_no_ts_t pos;
@@ -329,7 +214,7 @@ int test_aprs_real_packets() {
         free(pos.comment);
     }
 
-    // Test 12: Real message ":WB2OSZ-7 :Hello{001}"
+    // Test 2: Real message ":WB2OSZ-7 :Hello{001}"
     {
         const char *info = ":WB2OSZ-7 :Hello{001}";
         aprs_message_t msg;
@@ -343,45 +228,25 @@ int test_aprs_real_packets() {
         free(msg.message_number);
     }
 
-    // Test 13: Real frame encoding (APRS > KX4O-7, "!3821.31N/07742.02W>")
-    {
-        aprs_frame_t frame = { .destination = { .callsign = "APRS  ", .ssid = 0 }, .source = { .callsign = "KX4O  ", .ssid = 7 }, .num_digipeaters = 0, .info =
-                "!3821.31N/07742.02W>", .info_len = 20 };
-        char buf[256];
-        int len = aprs_encode_frame(buf, 256, &frame);
-        TEST_ASSERT(len == 40, "Real frame encoding length incorrect", err);
-        aprs_frame_t decoded;
-        int decode_len = aprs_decode_frame(buf, len, &decoded);
-        TEST_ASSERT(decode_len == len, "Real frame decoding length mismatch", err);
-        char trimmed_source[7];
-        strncpy(trimmed_source, decoded.source.callsign, 6);
-        trimmed_source[6] = '\0';
-        trim_trailing_spaces(trimmed_source);
-        TEST_ASSERT(strcmp(trimmed_source, "KX4O") == 0, "Real frame source callsign mismatch", err);
-        TEST_ASSERT(decoded.info_len == 20, "Real frame info length mismatch", err);
-        TEST_ASSERT(strncmp(decoded.info, "!3821.31N/07742.02W>", 20) == 0, "Real frame info mismatch", err);
-        free(decoded.info);
-    }
-
     return err;
 }
 
 int test_aprs_edge_cases() {
     uint8_t err = 0;
 
-    // Test 14: Invalid latitude
+    // Test 1: Invalid latitude
     {
         char *lat_str = lat_to_aprs(91.0, 0);
         TEST_ASSERT(lat_str == NULL, "Latitude > 90 should return NULL", err);
     }
 
-    // Test 15: Invalid longitude
+    // Test 2: Invalid longitude
     {
         char *lon_str = lon_to_aprs(-181.0, 0);
         TEST_ASSERT(lon_str == NULL, "Longitude < -180 should return NULL", err);
     }
 
-    // Test 16: Message with long addressee
+    // Test 3: Message with long addressee
     {
         aprs_message_t msg;
         memcpy(msg.addressee, "TOOLONGADD", 10); // 10 chars, no null terminator
@@ -392,29 +257,13 @@ int test_aprs_edge_cases() {
         TEST_ASSERT(len == -1, "Encoding long addressee should fail", err);
     }
 
-    // Test 17: Frame with max digipeaters
-    {
-        aprs_frame_t frame = { .destination = { .callsign = "APRS  ", .ssid = 0 }, .source = { .callsign = "N0CALL", .ssid = 0 }, .digipeaters =
-                { { .callsign = "WIDE1 ", .ssid = 1 }, { .callsign = "WIDE2 ", .ssid = 2 }, { .callsign = "WIDE3 ", .ssid = 3 }, { .callsign = "WIDE4 ", .ssid =
-                        4 }, { .callsign = "WIDE5 ", .ssid = 5 }, { .callsign = "WIDE6 ", .ssid = 6 }, { .callsign = "WIDE7 ", .ssid = 7 }, { .callsign =
-                        "WIDE8 ", .ssid = 8 } }, .num_digipeaters = 8, .info = "!4900.00N/07200.00W/", .info_len = 20 };
-        char buf[256];
-        int len = aprs_encode_frame(buf, 256, &frame);
-        TEST_ASSERT(len == 96, "Max digipeaters frame length incorrect", err);
-        aprs_frame_t decoded;
-        int decode_len = aprs_decode_frame(buf, len, &decoded);
-        TEST_ASSERT(decode_len == len, "Max digipeaters decoding length mismatch", err);
-        TEST_ASSERT(decoded.num_digipeaters == 8, "Max digipeaters count mismatch", err);
-        free(decoded.info);
-    }
-
     return err;
 }
 
 int test_aprs_weather_object_position() {
     uint8_t err = 0;
 
-    // Test: Weather report encoding and decoding
+    // Test 1: Weather report encoding and decoding
     {
         aprs_weather_report_t weather = { .timestamp = "12010000", .temperature = 25.0, .wind_speed = 10, .wind_direction = 180 };
         char info[100];
@@ -430,7 +279,7 @@ int test_aprs_weather_object_position() {
         TEST_ASSERT(strcmp(decoded.timestamp, "12010000") == 0, "Timestamp mismatch", err);
     }
 
-    // Test: Object report encoding and decoding
+    // Test 2: Object report encoding and decoding
     {
         aprs_object_report_t obj = { .name = "TESTOBJ  ", .timestamp = "111111z", .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/',
                 .symbol_code = '>' };
@@ -452,7 +301,7 @@ int test_aprs_weather_object_position() {
         TEST_ASSERT(decoded.symbol_code == '>', "Object symbol code mismatch", err);
     }
 
-    // Test: Timestamped position report encoding and decoding
+    // Test 3: Timestamped position report encoding and decoding
     {
         aprs_position_with_ts_t pos = { .timestamp = "111111z", .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/', .symbol_code = '>', .comment =
                 "Moving", .dti = '@' };
@@ -473,37 +322,39 @@ int test_aprs_weather_object_position() {
         free(decoded.comment);
     }
 
-    // Test: Mic-E encoding and decoding
+    // Test 4: Mic-E encoding and decoding
     {
         aprs_mice_t mice = { .latitude = 33.426667, // 33°25.60'N
                 .longitude = -112.129, // 112°07.74'W
                 .speed = 20, .course = 251, .symbol_table = '/', .symbol_code = '[', .message_code = "M3" // Returning
                 };
-        aprs_address_t source = { .callsign = "N0CALL", .ssid = 0 };
-        aprs_address_t digipeaters[1] = { { .callsign = "WIDE1 ", .ssid = 1 } };
-        char buf[256];
-        int len = aprs_encode_mice_frame(buf, 256, &mice, &source, digipeaters, 1);
-        TEST_ASSERT(len >= 25, "Mic-E frame encoding length incorrect", err);
+        char dest_str[7];
+        char info[100];
+        int ret1 = aprs_encode_mice_destination(dest_str, &mice);
+        int len = aprs_encode_mice_info(info, 100, &mice);
+        TEST_ASSERT(ret1 == 0, "Mic-E destination encoding failed", err);
+        TEST_ASSERT(len == 9, "Mic-E info encoding length incorrect", err);
         aprs_mice_t decoded;
-        aprs_address_t decoded_source;
-        aprs_address_t decoded_digipeaters[8];
-        int decoded_num_digipeaters;
-        int ret = aprs_decode_mice_frame(buf, len, &decoded, &decoded_source, decoded_digipeaters, &decoded_num_digipeaters);
-        TEST_ASSERT(ret == 0, "Mic-E frame decoding failed", err);
+        int message_bits;
+        bool ns, long_offset, we;
+        int ret2 = aprs_decode_mice_destination(dest_str, &decoded, &message_bits, &ns, &long_offset, &we);
+        int ret3 = aprs_decode_mice_info(info, len, &decoded, long_offset, we);
+        TEST_ASSERT(ret2 == 0, "Mic-E destination decoding failed", err);
+        TEST_ASSERT(ret3 == 0, "Mic-E info decoding failed", err);
         TEST_ASSERT(fabs(decoded.latitude - 33.426667) < 0.001, "Mic-E latitude mismatch", err);
         TEST_ASSERT(fabs(decoded.longitude + 112.129) < 0.001, "Mic-E longitude mismatch", err);
         TEST_ASSERT(decoded.speed == 20, "Mic-E speed mismatch", err);
         TEST_ASSERT(decoded.course == 251, "Mic-E course mismatch", err);
         TEST_ASSERT(decoded.symbol_table == '/', "Mic-E symbol table mismatch", err);
         TEST_ASSERT(decoded.symbol_code == '[', "Mic-E symbol code mismatch", err);
+        const char *standard_codes[8] = { "Emergency", "M6", "M5", "M4", "M3", "M2", "M1", "M0" };
+        strcpy(decoded.message_code, standard_codes[message_bits]);
         TEST_ASSERT(strcmp(decoded.message_code, "M3") == 0, "Mic-E message code mismatch", err);
-        TEST_ASSERT(strcmp(decoded_source.callsign, "N0CALL") == 0, "Mic-E source callsign mismatch", err);
-        TEST_ASSERT(decoded_num_digipeaters == 1, "Mic-E digipeater count mismatch", err);
     }
 
-    // Test: Telemetry encoding and decoding
+    // Test 5: Telemetry encoding and decoding
     {
-        aprs_telemetry_t telem = { .callsign = "N0CALL", .ssid = 0, .sequence_number = 123, .analog = { 100.0, 200.0, 150.0, 50.0, 255.0 }, .digital = 0xA5 // 10100101
+        aprs_telemetry_t telem = { .sequence_number = 123, .analog = { 100.0, 200.0, 150.0, 50.0, 255.0 }, .digital = 0xA5 // 10100101
                 };
         char info[100];
         int len = aprs_encode_telemetry(info, 100, &telem);
@@ -679,152 +530,287 @@ int test_aprs_station_capabilities() {
     return err;
 }
 
-int test_aprs_print_real_packets() {
+int test_aprs_packets() {
     uint8_t err = 0;
 
-    // Test 1: Print a real APRS position packet
+    // Test 1: Position Report without Timestamp
     {
-        aprs_frame_t frame = {
-            .destination = { .callsign = "APRS  ", .ssid = 0 },
-            .source = { .callsign = "N0CALL", .ssid = 7 },
-            .num_digipeaters = 0,
-            .info = "!4903.50N/07201.75W-A test position",
-            .info_len = 28
+        aprs_position_no_ts_t original = {
+            .latitude = 37.7749,
+            .longitude = -122.4194,
+            .symbol_table = '/',
+            .symbol_code = '>',
+            .comment = "San Francisco",
+            .dti = '!',
+            .has_course_speed = true,
+            .course = 180,
+            .speed = 10
         };
-        unsigned char buf[256];
-        int len = aprs_encode_frame((char *)buf, 256, &frame);
-        if (len < 0) {
-            printf("Failed to encode APRS frame for Test 1\n");
-            return 1;
-        }
-        printf("\nTest 1: Printing raw APRS position packet\n");
-        aprs_frame_print(buf, len);
+
+        char info[100];
+        int len = aprs_encode_position_no_ts(info, 100, &original);
+        TEST_ASSERT(len > 0, "Failed to encode position no ts", err);
+
+        aprs_position_no_ts_t decoded;
+        int ret = aprs_decode_position_no_ts(info, &decoded);
+        TEST_ASSERT(ret == 0, "Failed to decode position no ts", err);
+
+        TEST_ASSERT(fabs(decoded.latitude - original.latitude) < 0.0001, "Latitude mismatch", err);
+        TEST_ASSERT(fabs(decoded.longitude - original.longitude) < 0.0001, "Longitude mismatch", err);
+        TEST_ASSERT(decoded.symbol_table == original.symbol_table, "Symbol table mismatch", err);
+        TEST_ASSERT(decoded.symbol_code == original.symbol_code, "Symbol code mismatch", err);
+        TEST_ASSERT(strcmp(decoded.comment, original.comment) == 0, "Comment mismatch", err);
+        TEST_ASSERT(decoded.dti == original.dti, "DTI mismatch", err);
+        TEST_ASSERT(decoded.has_course_speed == original.has_course_speed, "has_course_speed mismatch", err);
+        TEST_ASSERT(decoded.course == original.course, "Course mismatch", err);
+        TEST_ASSERT(decoded.speed == original.speed, "Speed mismatch", err);
+
+        aprs_frame_print((unsigned char*)info, len);
+        free(decoded.comment);
     }
 
-    // Test 2: Decode an AX.25 packet with digipeater and print APRS content
+    // Test 2: Position Report with Timestamp
     {
-        aprs_frame_t frame2 = {
-            .destination = { .callsign = "APRS  ", .ssid = 0 },
-            .source = { .callsign = "N0CALL", .ssid = 7 },
-            .digipeaters = { { .callsign = "WIDE1 ", .ssid = 1 } },
-            .num_digipeaters = 1,
-            .info = ":WB2OSZ-7 :Hello",
-            .info_len = 16
+        aprs_position_with_ts_t original = {
+            .dti = '@',
+            .timestamp = "111111z",
+            .latitude = 37.7749,
+            .longitude = -122.4194,
+            .symbol_table = '/',
+            .symbol_code = '>',
+            .comment = "Moving"
         };
-        unsigned char buf2[256];
-        int len2 = aprs_encode_frame((char *)buf2, 256, &frame2);
-        if (len2 < 0) {
-            printf("Failed to encode APRS frame with digipeater for Test 2\n");
-            return 1;
-        }
-        printf("\nTest 2: Decoding AX.25 packet and printing APRS message\n");
-        ax25_frame_t *decoded_frame = ax25_frame_decode(buf2 + 1, len2 - 2, MODULO128_FALSE, &err);
-        if (decoded_frame && err == 0) {
-            if (decoded_frame->type == AX25_FRAME_UNNUMBERED_INFORMATION) {
-                aprs_frame_print(buf2, len2);
-            } else {
-                printf("Decoded frame is not a UI frame (type: %d)\n", decoded_frame->type);
-            }
-            ax25_frame_free(decoded_frame, &err);
-        } else {
-            printf("AX.25 decoding failed with error %d\n", err);
-        }
+
+        char info[100];
+        int len = aprs_encode_position_with_ts(info, 100, &original);
+        TEST_ASSERT(len > 0, "Failed to encode position with ts", err);
+
+        aprs_position_with_ts_t decoded;
+        int ret = aprs_decode_position_with_ts(info, &decoded);
+        TEST_ASSERT(ret == 0, "Failed to decode position with ts", err);
+
+        TEST_ASSERT(decoded.dti == original.dti, "DTI mismatch", err);
+        TEST_ASSERT(strcmp(decoded.timestamp, original.timestamp) == 0, "Timestamp mismatch", err);
+        TEST_ASSERT(fabs(decoded.latitude - original.latitude) < 0.0001, "Latitude mismatch", err);
+        TEST_ASSERT(fabs(decoded.longitude - original.longitude) < 0.0001, "Longitude mismatch", err);
+        TEST_ASSERT(decoded.symbol_table == original.symbol_table, "Symbol table mismatch", err);
+        TEST_ASSERT(decoded.symbol_code == original.symbol_code, "Symbol code mismatch", err);
+        TEST_ASSERT(strcmp(decoded.comment, original.comment) == 0, "Comment mismatch", err);
+
+        aprs_frame_print((unsigned char*)info, len);
+        free(decoded.comment);
     }
 
-    // Test 3: Simulate HDLC decoding and print APRS content
+    // Test 3: Message
     {
-        aprs_frame_t frame3 = {
-            .destination = { .callsign = "APRS  ", .ssid = 0 },
-            .source = { .callsign = "N0CALL", .ssid = 7 },
-            .num_digipeaters = 0,
-            .info = "!4903.50N/07201.75W-A test position",
-            .info_len = 28
+        aprs_message_t original = {
+            .addressee = "WB2OSZ-7",
+            .message = "Hello",
+            .message_number = "001"
         };
-        unsigned char buf3[256];
-        int len3 = aprs_encode_frame((char *)buf3, 256, &frame3);
-        if (len3 < 0) {
-            printf("Failed to encode APRS frame for Test 3\n");
-            return 1;
-        }
-        printf("\nTest 3: Decoding HDLC packet to AX.25 and printing APRS position (simplified)\n");
-        aprs_frame_print(buf3, len3);
-        printf("Note: HDLC encoding simulated with a valid APRS frame.\n");
+
+        char info[100];
+        int len = aprs_encode_message(info, 100, &original);
+        TEST_ASSERT(len > 0, "Failed to encode message", err);
+
+        aprs_message_t decoded;
+        int ret = aprs_decode_message(info, &decoded);
+        TEST_ASSERT(ret == 0, "Failed to decode message", err);
+
+        trim_trailing_spaces(decoded.addressee);
+        TEST_ASSERT(strcmp(decoded.addressee, original.addressee) == 0, "Addressee mismatch", err);
+        TEST_ASSERT(strcmp(decoded.message, original.message) == 0, "Message mismatch", err);
+        TEST_ASSERT(strcmp(decoded.message_number, original.message_number) == 0, "Message number mismatch", err);
+
+        aprs_frame_print((unsigned char*)info, len);
+        free(decoded.message);
+        free(decoded.message_number);
     }
 
-    // Test 4: Weather report packet
+    // Test 4: Weather Report
     {
-        aprs_frame_t frame4 = {
-            .destination = { .callsign = "APRS  ", .ssid = 0 },
-            .source = { .callsign = "N0CALL", .ssid = 7 },
-            .num_digipeaters = 0,
-            .info = "@141923z3859.11N/07629.23W_223/030t077r000p000b10132h50",
-            .info_len = 50
+        aprs_weather_report_t original = {
+            .timestamp = "12010000",
+            .temperature = 25.0,
+            .wind_speed = 10,
+            .wind_direction = 180
         };
-        unsigned char buf4[256];
-        int len4 = aprs_encode_frame((char *)buf4, 256, &frame4);
-        if (len4 < 0) {
-            printf("Failed to encode APRS frame for Test 4\n");
-            return 1;
-        }
-        printf("\nTest 4: Printing weather report packet\n");
-        aprs_frame_print(buf4, len4);
+
+        char info[100];
+        int len = aprs_encode_weather_report(info, 100, &original);
+        TEST_ASSERT(len > 0, "Failed to encode weather report", err);
+
+        aprs_weather_report_t decoded;
+        int ret = aprs_decode_weather_report(info, &decoded);
+        TEST_ASSERT(ret == 0, "Failed to decode weather report", err);
+
+        TEST_ASSERT(strcmp(decoded.timestamp, original.timestamp) == 0, "Timestamp mismatch", err);
+        TEST_ASSERT(fabs(decoded.temperature - original.temperature) < 0.001, "Temperature mismatch", err);
+        TEST_ASSERT(decoded.wind_speed == original.wind_speed, "Wind speed mismatch", err);
+        TEST_ASSERT(decoded.wind_direction == original.wind_direction, "Wind direction mismatch", err);
+
+        aprs_frame_print((unsigned char*)info, len);
     }
 
-    // Test 5: Object position packet
+    // Test 5: Object Report
     {
-        aprs_frame_t frame5 = {
-            .destination = { .callsign = "APRS  ", .ssid = 0 },
-            .source = { .callsign = "N0CALL", .ssid = 7 },
-            .num_digipeaters = 0,
-            .info = ";BALLOON  *141923z3859.11N/07629.23W$223/030/Flying high",
-            .info_len = 50
+        aprs_object_report_t original = {
+            .name = "TESTOBJ  ",
+            .timestamp = "111111z",
+            .latitude = 37.7749,
+            .longitude = -122.4194,
+            .symbol_table = '/',
+            .symbol_code = '>'
         };
-        unsigned char buf5[256];
-        int len5 = aprs_encode_frame((char *)buf5, 256, &frame5);
-        if (len5 < 0) {
-            printf("Failed to encode APRS frame for Test 5\n");
-            return 1;
-        }
-        printf("\nTest 5: Printing object position packet\n");
-        aprs_frame_print(buf5, len5);
+
+        char info[100];
+        int len = aprs_encode_object_report(info, 100, &original);
+        TEST_ASSERT(len > 0, "Failed to encode object report", err);
+
+        aprs_object_report_t decoded;
+        int ret = aprs_decode_object_report(info, &decoded);
+        TEST_ASSERT(ret == 0, "Failed to decode object report", err);
+
+        char trimmed_name[10];
+        strncpy(trimmed_name, decoded.name, 9);
+        trimmed_name[9] = '\0';
+        trim_trailing_spaces(trimmed_name);
+        TEST_ASSERT(strcmp(trimmed_name, "TESTOBJ") == 0, "Object name mismatch", err);
+        TEST_ASSERT(strcmp(decoded.timestamp, original.timestamp) == 0, "Timestamp mismatch", err);
+        TEST_ASSERT(fabs(decoded.latitude - original.latitude) < 0.0001, "Latitude mismatch", err);
+        TEST_ASSERT(fabs(decoded.longitude - original.longitude) < 0.0001, "Longitude mismatch", err);
+        TEST_ASSERT(decoded.symbol_table == original.symbol_table, "Symbol table mismatch", err);
+        TEST_ASSERT(decoded.symbol_code == original.symbol_code, "Symbol code mismatch", err);
+
+        aprs_frame_print((unsigned char*)info, len);
     }
 
-    // Test 6: Position with PHG packet
+    // Test 6: Telemetry Report
     {
-        aprs_frame_t frame6 = {
-            .destination = { .callsign = "APRS  ", .ssid = 0 },
-            .source = { .callsign = "N0CALL", .ssid = 7 },
-            .num_digipeaters = 0,
-            .info = "!4903.50N/07201.75W#PHG5360",
-            .info_len = 24
+        aprs_telemetry_t original = {
+            .sequence_number = 123,
+            .analog = {100.0, 200.0, 150.0, 50.0, 255.0},
+            .digital = 0xA5
         };
-        unsigned char buf6[256];
-        int len6 = aprs_encode_frame((char *)buf6, 256, &frame6);
-        if (len6 < 0) {
-            printf("Failed to encode APRS frame for Test 6\n");
-            return 1;
+
+        char info[100];
+        int len = aprs_encode_telemetry(info, 100, &original);
+        TEST_ASSERT(len > 0, "Failed to encode telemetry", err);
+
+        aprs_telemetry_t decoded;
+        int ret = aprs_decode_telemetry(info, &decoded);
+        TEST_ASSERT(ret == 0, "Failed to decode telemetry", err);
+
+        TEST_ASSERT(decoded.sequence_number == original.sequence_number, "Sequence number mismatch", err);
+        for (int i = 0; i < 5; i++) {
+            char msg[50];
+            snprintf(msg, 50, "Analog %d mismatch", i);
+            TEST_ASSERT(fabs(decoded.analog[i] - original.analog[i]) < 0.001, msg, err);
         }
-        printf("\nTest 6: Printing position with PHG packet\n");
-        aprs_frame_print(buf6, len6);
+        TEST_ASSERT(decoded.digital == original.digital, "Digital bits mismatch", err);
+
+        aprs_frame_print((unsigned char*)info, len);
     }
 
-    // Test 7: Grid square report packet
+    // Test 7: Status Report
     {
-        aprs_frame_t frame7 = {
-            .destination = { .callsign = "APRS  ", .ssid = 0 },
-            .source = { .callsign = "N0CALL", .ssid = 7 },
-            .num_digipeaters = 0,
-            .info = ">FM19SX Grid square report",
-            .info_len = 26
+        aprs_status_t original = {
+            .has_timestamp = true,
+            .timestamp = "092345z",
+            .status_text = "Test status"
         };
-        unsigned char buf7[256];
-        int len7 = aprs_encode_frame((char *)buf7, 256, &frame7);
-        if (len7 < 0) {
-            printf("Failed to encode APRS frame for Test 7\n");
-            return 1;
-        }
-        printf("\nTest 7: Printing grid square report packet\n");
-        aprs_frame_print(buf7, len7);
+
+        char info[100];
+        int len = aprs_encode_status(info, 100, &original);
+        TEST_ASSERT(len > 0, "Failed to encode status", err);
+
+        aprs_status_t decoded;
+        int ret = aprs_decode_status(info, &decoded);
+        TEST_ASSERT(ret == 0, "Failed to decode status", err);
+
+        TEST_ASSERT(decoded.has_timestamp == original.has_timestamp, "has_timestamp mismatch", err);
+        TEST_ASSERT(strcmp(decoded.timestamp, original.timestamp) == 0, "Timestamp mismatch", err);
+        TEST_ASSERT(strcmp(decoded.status_text, original.status_text) == 0, "Status text mismatch", err);
+
+        aprs_frame_print((unsigned char*)info, len);
+    }
+
+    // Test 8: General Query
+    {
+        aprs_general_query_t original = {
+            .query_type = "APRS"
+        };
+
+        char info[100];
+        int len = aprs_encode_general_query(info, 100, &original);
+        TEST_ASSERT(len > 0, "Failed to encode general query", err);
+
+        aprs_general_query_t decoded;
+        int ret = aprs_decode_general_query(info, &decoded);
+        TEST_ASSERT(ret == 0, "Failed to decode general query", err);
+
+        TEST_ASSERT(strcmp(decoded.query_type, original.query_type) == 0, "Query type mismatch", err);
+
+        aprs_frame_print((unsigned char*)info, len);
+    }
+
+    // Test 9: Station Capabilities
+    {
+        aprs_station_capabilities_t original = {
+            .capabilities_text = "IGATE,MSG_CNT=43,LOC_CNT=14"
+        };
+
+        char info[100];
+        int len = aprs_encode_station_capabilities(info, 100, &original);
+        TEST_ASSERT(len > 0, "Failed to encode station capabilities", err);
+
+        aprs_station_capabilities_t decoded;
+        int ret = aprs_decode_station_capabilities(info, &decoded);
+        TEST_ASSERT(ret == 0, "Failed to decode station capabilities", err);
+
+        TEST_ASSERT(strcmp(decoded.capabilities_text, original.capabilities_text) == 0, "Capabilities text mismatch", err);
+
+        aprs_frame_print((unsigned char*)info, len);
+    }
+
+    // Test 10: Mic-E Compressed Position Report
+    {
+        aprs_mice_t original = {
+            .latitude = 33.426667,
+            .longitude = -112.129,
+            .speed = 20,
+            .course = 251,
+            .symbol_table = '/',
+            .symbol_code = '[',
+            .message_code = "M3"
+        };
+
+        char dest_str[7];
+        char info[100];
+        int ret1 = aprs_encode_mice_destination(dest_str, &original);
+        int len = aprs_encode_mice_info(info, 100, &original);
+        TEST_ASSERT(ret1 == 0, "Failed to encode Mic-E destination", err);
+        TEST_ASSERT(len > 0, "Failed to encode Mic-E info", err);
+
+        aprs_mice_t decoded;
+        int message_bits;
+        bool ns, long_offset, we;
+        int ret2 = aprs_decode_mice_destination(dest_str, &decoded, &message_bits, &ns, &long_offset, &we);
+        int ret3 = aprs_decode_mice_info(info, len, &decoded, long_offset, we);
+        TEST_ASSERT(ret2 == 0, "Failed to decode Mic-E destination", err);
+        TEST_ASSERT(ret3 == 0, "Failed to decode Mic-E info", err);
+
+        TEST_ASSERT(fabs(decoded.latitude - original.latitude) < 0.001, "Latitude mismatch", err);
+        TEST_ASSERT(fabs(decoded.longitude - original.longitude) < 0.001, "Longitude mismatch", err);
+        TEST_ASSERT(decoded.speed == original.speed, "Speed mismatch", err);
+        TEST_ASSERT(decoded.course == original.course, "Course mismatch", err);
+        TEST_ASSERT(decoded.symbol_table == original.symbol_table, "Symbol table mismatch", err);
+        TEST_ASSERT(decoded.symbol_code == original.symbol_code, "Symbol code mismatch", err);
+        const char *standard_codes[8] = { "Emergency", "M6", "M5", "M4", "M3", "M2", "M1", "M0" };
+        strcpy(decoded.message_code, standard_codes[message_bits]);
+        TEST_ASSERT(strcmp(decoded.message_code, original.message_code) == 0, "Message code mismatch", err);
+
+        aprs_frame_print((unsigned char*)info, len);
     }
 
     return err;
@@ -835,8 +821,6 @@ int test_aprs_main() {
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Starting APRS Tests\n");
     printf("----------------------------------------------------------------------------------\n\n");
-    result |= test_aprs_address_encoding_decoding();
-    result |= test_aprs_frame_encoding_decoding();
     result |= test_aprs_position_encoding_decoding();
     result |= test_aprs_message_encoding_decoding();
     result |= test_aprs_real_packets();
@@ -850,10 +834,7 @@ int test_aprs_main() {
     result |= test_aprs_status();
     result |= test_aprs_general_query();
     result |= test_aprs_station_capabilities();
-
-    printf("\n----------------------------------------------------------------------------------\n");
-    result |= test_aprs_print_real_packets();
-    printf("\n----------------------------------------------------------------------------------\n");
+    result |= test_aprs_packets();
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Tests APRS Completed. %s\n", result == 0 ? "All tests passed" : "Some tests failed");
     printf("----------------------------------------------------------------------------------\n\n");

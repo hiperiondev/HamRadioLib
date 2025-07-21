@@ -27,26 +27,11 @@
 #include <stddef.h>
 
 /**
- * @brief Structure to represent an AX.25 address used in APRS.
- *
- * This structure holds the callsign and SSID (Secondary Station Identifier) of a station.
- * The callsign is a null-terminated string of up to 6 characters, and the SSID is an integer from 0 to 15.
- */
-typedef struct {
-    char callsign[7]; ///< Callsign of the station, null-terminated.
-    uint8_t ssid;     ///< SSID of the station, ranging from 0 to 15.
-} aprs_address_t;
-
-/**
  * @brief Structure to represent an AX.25 frame for APRS packets.
  *
  * This structure contains the source, destination, digipeater path, and information field of an APRS packet.
  */
 typedef struct {
-    aprs_address_t source;        ///< Source address of the packet.
-    aprs_address_t destination;   ///< Destination address of the packet.
-    aprs_address_t digipeaters[8];   ///< Array of digipeater addresses (up to 8).
-    int num_digipeaters;          ///< Number of digipeater addresses in the path.
     char *info;                   ///< Information field of the APRS packet.
     size_t info_len;              ///< Length of the information field.
 } aprs_frame_t;
@@ -63,7 +48,7 @@ typedef struct {
     char symbol_code;     ///< Symbol code (printable ASCII).
     char *comment;        ///< Optional comment field, null-terminated.
     char dti;             ///< Data Type Indicator ('!' or '=' for non-messaging/messaging capable).
-    bool has_course_speed;             ///< Flag indicating if course and speed are included.
+    bool has_course_speed; ///< Flag indicating if course and speed are included.
     int course;           ///< Course in degrees (0-360), if has_course_speed is true.
     int speed;            ///< Speed in knots (>=0), if has_course_speed is true.
 } aprs_position_no_ts_t;
@@ -133,19 +118,17 @@ typedef struct {
     int course;           ///< Course in degrees (0-360).
     char symbol_table;    ///< Symbol table identifier ('/' or '\').
     char symbol_code;     ///< Symbol code (printable ASCII).
-    char message_code[10];     ///< Message code (e.g., "M0", "C1", "Emergency"), null-terminated.
+    char message_code[10]; ///< Message code (e.g., "M0", "C1", "Emergency"), null-terminated.
 } aprs_mice_t;
 
 /**
  * @brief Structure for APRS telemetry report.
  *
- * This structure holds telemetry data, including callsign, sequence number, analog values, and digital bits.
+ * This structure holds telemetry data, including sequence number, analog values, and digital bits.
  */
 typedef struct {
-    char callsign[7];     ///< Callsign (6 chars + null terminator).
-    uint8_t ssid;         ///< SSID (0-15).
     unsigned int sequence_number; ///< Sequence number (0-999).
-    double analog[5];     ///< Five analog values (typically 0-999).
+    double analog[5];     ///< Five analog values (typically 0-255).
     uint8_t digital;      ///< Eight digital bits (0 or 1).
 } aprs_telemetry_t;
 
@@ -177,42 +160,6 @@ typedef struct {
 typedef struct {
     char capabilities_text[100]; ///< Capabilities text, up to 99 characters + null terminator.
 } aprs_station_capabilities_t;
-
-/**
- * @brief Encode a single AX.25 address into a buffer.
- *
- * This function encodes the given address into the provided buffer in the AX.25 format, including callsign and SSID.
- *
- * @param buf Output buffer to write the encoded address.
- * @param addr Pointer to the address structure to encode.
- * @param is_last Flag indicating if this is the last address in the sequence.
- * @param is_digipeater Flag indicating if this is a digipeater address.
- * @return Number of bytes written to the buffer (always 7).
- */
-int aprs_encode_address(char *buf, const aprs_address_t *addr, bool is_last, bool is_digipeater);
-
-/**
- * @brief Encode all addresses in an AX.25 frame.
- *
- * This function encodes the source, destination, and digipeater addresses into the provided buffer.
- *
- * @param buf Output buffer to write the encoded addresses.
- * @param frame Pointer to the frame structure containing addresses.
- * @return Number of bytes written to the buffer.
- */
-int aprs_encode_addresses(char *buf, const aprs_frame_t *frame);
-
-/**
- * @brief Encode a complete AX.25 frame.
- *
- * This function encodes the entire AX.25 frame, including source, destination, digipeater path, and information field.
- *
- * @param buf Output buffer to write the encoded frame.
- * @param buf_len Size of the output buffer.
- * @param frame Pointer to the frame structure to encode.
- * @return Number of bytes written to the buffer, or -1 on error.
- */
-int aprs_encode_frame(char *buf, size_t buf_len, const aprs_frame_t *frame);
 
 /**
  * @brief Convert latitude to APRS format.
@@ -261,30 +208,6 @@ int aprs_encode_position_no_ts(char *info, size_t len, const aprs_position_no_ts
  * @return Number of bytes written to the buffer, or -1 on error.
  */
 int aprs_encode_message(char *info, size_t len, const aprs_message_t *data);
-
-/**
- * @brief Decode an AX.25 address from a buffer.
- *
- * This function decodes an AX.25 address from the input buffer into an address structure.
- *
- * @param buf Input buffer containing the encoded address.
- * @param addr Pointer to the address structure to fill.
- * @param is_last Pointer to a flag indicating if this is the last address in the sequence.
- * @return Number of bytes read (7), or -1 on error.
- */
-int aprs_decode_address(const char *buf, aprs_address_t *addr, bool *is_last);
-
-/**
- * @brief Decode an AX.25 frame.
- *
- * This function decodes an AX.25 frame from the input buffer, including addresses and information field.
- *
- * @param buf Input buffer containing the encoded frame.
- * @param len Length of the input buffer.
- * @param frame Pointer to the frame structure to fill.
- * @return Number of bytes read, or -1 on error.
- */
-int aprs_decode_frame(const char *buf, size_t len, aprs_frame_t *frame);
 
 /**
  * @brief Decode an APRS position report without timestamp.
@@ -447,45 +370,6 @@ int aprs_encode_mice_destination(char *dest_str, const aprs_mice_t *data);
 int aprs_encode_mice_info(char *info, size_t len, const aprs_mice_t *data);
 
 /**
- * @brief Encode a complete Mic-E frame.
- *
- * This function encodes a Mic-E frame, including destination address, source, digipeaters, and information field.
- *
- * @param buf Output buffer for the encoded frame.
- * @param buf_len Size of the output buffer.
- * @param data Pointer to the Mic-E data structure.
- * @param source Pointer to the source address.
- * @param digipeaters Array of digipeater addresses.
- * @param num_digipeaters Number of digipeater addresses.
- * @return Number of bytes written to the buffer, or -1 on error.
- */
-int aprs_encode_mice_frame(char *buf, size_t buf_len, const aprs_mice_t *data, const aprs_address_t *source, const aprs_address_t *digipeaters,
-        int num_digipeaters);
-
-/**
- * @brief Encode an APRS telemetry report.
- *
- * This function encodes a telemetry report packet into the information field.
- *
- * @param info Output buffer for the information field.
- * @param len Size of the output buffer.
- * @param data Pointer to the telemetry data structure.
- * @return Number of bytes written to the buffer, or -1 on error.
- */
-int aprs_encode_telemetry(char *info, size_t len, const aprs_telemetry_t *data);
-
-/**
- * @brief Decode an APRS telemetry report.
- *
- * This function decodes a telemetry report packet from the information field into a structure.
- *
- * @param info Input buffer containing the information field.
- * @param data Pointer to the telemetry data structure to fill.
- * @return 0 on success, -1 on error.
- */
-int aprs_decode_telemetry(const char *info, aprs_telemetry_t *data);
-
-/**
  * @brief Decode Mic-E destination address.
  *
  * This function decodes the latitude and message bits from the destination address of a Mic-E packet.
@@ -515,19 +399,27 @@ int aprs_decode_mice_destination(const char *dest_str, aprs_mice_t *data, int *m
 int aprs_decode_mice_info(const char *info, size_t len, aprs_mice_t *data, bool long_offset, bool we);
 
 /**
- * @brief Decode a complete Mic-E frame.
+ * @brief Encode an APRS telemetry report.
  *
- * This function decodes a Mic-E frame, including destination address, source, digipeaters, and information field.
+ * This function encodes a telemetry report packet into the information field.
  *
- * @param buf Input buffer containing the encoded frame.
- * @param len Length of the input buffer.
- * @param data Pointer to the Mic-E data structure to fill.
- * @param source Pointer to the source address structure to fill.
- * @param digipeaters Array to store digipeater addresses.
- * @param num_digipeaters Pointer to store the number of digipeater addresses.
+ * @param info Output buffer for the information field.
+ * @param len Size of the output buffer.
+ * @param data Pointer to the telemetry data structure.
+ * @return Number of bytes written to the buffer, or -1 on error.
+ */
+int aprs_encode_telemetry(char *info, size_t len, const aprs_telemetry_t *data);
+
+/**
+ * @brief Decode an APRS telemetry report.
+ *
+ * This function decodes a telemetry report packet from the information field into a structure.
+ *
+ * @param info Input buffer containing the information field.
+ * @param data Pointer to the telemetry data structure to fill.
  * @return 0 on success, -1 on error.
  */
-int aprs_decode_mice_frame(const char *buf, size_t len, aprs_mice_t *data, aprs_address_t *source, aprs_address_t *digipeaters, int *num_digipeaters);
+int aprs_decode_telemetry(const char *info, aprs_telemetry_t *data);
 
 /**
  * @brief Encode an APRS status report.

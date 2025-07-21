@@ -311,48 +311,24 @@ void hdlc_frame_print(unsigned char *hdlc_frame, int hdlc_len) {
     free(ax25_frame_original);
 }
 
-void aprs_frame_print(unsigned char *aprs_frame, int aprs_len) {
-    aprs_frame_t frame;
-    int ret = aprs_decode_frame((const char*) aprs_frame, aprs_len, &frame);
-    if (ret < 0) {
-        printf("Failed to decode APRS frame: error %d\n", ret);
-        return;
-    }
-
-    // Print destination
-    printf("Destination: %s", frame.destination.callsign);
-    if (frame.destination.ssid != 0)
-        printf("-%d", frame.destination.ssid);
-    printf("\n");
-
-    // Print source
-    printf("Source: %s", frame.source.callsign);
-    if (frame.source.ssid != 0)
-        printf("-%d", frame.source.ssid);
-    printf("\n");
-
-    // Print digipeaters
-    for (int i = 0; i < frame.num_digipeaters; i++) {
-        printf("Digipeater: %s", frame.digipeaters[i].callsign);
-        if (frame.digipeaters[i].ssid != 0)
-            printf("-%d", frame.digipeaters[i].ssid);
-        printf("\n");
-    }
-
-    // Determine the Data Type Indicator (DTI)
-    if (frame.info_len < 1) {
+void aprs_frame_print(const unsigned char *aprs_frame, int aprs_len) {
+    if (aprs_len < 1) {
         printf("Information field empty\n");
-        free(frame.info);
         return;
     }
-    char dti = frame.info[0];
+
+    // Treat the input as the raw APRS information field
+    const char *info = (const char *)aprs_frame;
+
+    // Extract and print the Data Type Indicator (DTI)
+    char dti = info[0];
     printf("Data Type Indicator: %c\n", dti);
 
     switch (dti) {
         case '!':
         case '=': {
             aprs_position_no_ts_t pos;
-            if (aprs_decode_position_no_ts(frame.info, &pos) == 0) {
+            if (aprs_decode_position_no_ts(info, &pos) == 0) {
                 printf("Position: %.6f, %.6f\n", pos.latitude, pos.longitude);
                 printf("Symbol Table: %c\n", pos.symbol_table);
                 printf("Symbol Code: %c\n", pos.symbol_code);
@@ -372,7 +348,7 @@ void aprs_frame_print(unsigned char *aprs_frame, int aprs_len) {
         case '/':
         case '@': {
             aprs_position_with_ts_t pos;
-            if (aprs_decode_position_with_ts(frame.info, &pos) == 0) {
+            if (aprs_decode_position_with_ts(info, &pos) == 0) {
                 printf("Timestamp: %s\n", pos.timestamp);
                 printf("Position: %.6f, %.6f\n", pos.latitude, pos.longitude);
                 printf("Symbol Table: %c\n", pos.symbol_table);
@@ -388,7 +364,7 @@ void aprs_frame_print(unsigned char *aprs_frame, int aprs_len) {
         }
         case ':': {
             aprs_message_t msg;
-            if (aprs_decode_message(frame.info, &msg) == 0) {
+            if (aprs_decode_message(info, &msg) == 0) {
                 printf("Addressee: %s\n", msg.addressee);
                 printf("Message: %s\n", msg.message);
                 if (msg.message_number) {
@@ -403,7 +379,7 @@ void aprs_frame_print(unsigned char *aprs_frame, int aprs_len) {
         }
         case '_': {
             aprs_weather_report_t weather;
-            if (aprs_decode_weather_report(frame.info, &weather) == 0) {
+            if (aprs_decode_weather_report(info, &weather) == 0) {
                 printf("Timestamp: %s\n", weather.timestamp);
                 printf("Temperature: %.1f F\n", weather.temperature);
                 printf("Wind Speed: %d mph\n", weather.wind_speed);
@@ -415,7 +391,7 @@ void aprs_frame_print(unsigned char *aprs_frame, int aprs_len) {
         }
         case ';': {
             aprs_object_report_t obj;
-            if (aprs_decode_object_report(frame.info, &obj) == 0) {
+            if (aprs_decode_object_report(info, &obj) == 0) {
                 printf("Object Name: %s\n", obj.name);
                 printf("Timestamp: %s\n", obj.timestamp);
                 printf("Position: %.6f, %.6f\n", obj.latitude, obj.longitude);
@@ -428,7 +404,7 @@ void aprs_frame_print(unsigned char *aprs_frame, int aprs_len) {
         }
         case 'T': {
             aprs_telemetry_t telemetry;
-            if (aprs_decode_telemetry(frame.info, &telemetry) == 0) {
+            if (aprs_decode_telemetry(info, &telemetry) == 0) {
                 printf("Sequence Number: %u\n", telemetry.sequence_number);
                 for (int i = 0; i < 5; i++) {
                     printf("Analog %d: %.2f\n", i, telemetry.analog[i]);
@@ -441,7 +417,7 @@ void aprs_frame_print(unsigned char *aprs_frame, int aprs_len) {
         }
         case '>': {
             aprs_status_t status;
-            if (aprs_decode_status(frame.info, &status) == 0) {
+            if (aprs_decode_status(info, &status) == 0) {
                 if (status.has_timestamp) {
                     printf("Timestamp: %s\n", status.timestamp);
                 }
@@ -453,7 +429,7 @@ void aprs_frame_print(unsigned char *aprs_frame, int aprs_len) {
         }
         case '?': {
             aprs_general_query_t query;
-            if (aprs_decode_general_query(frame.info, &query) == 0) {
+            if (aprs_decode_general_query(info, &query) == 0) {
                 printf("Query Type: %s\n", query.query_type);
             } else {
                 printf("Failed to decode general query\n");
@@ -462,7 +438,7 @@ void aprs_frame_print(unsigned char *aprs_frame, int aprs_len) {
         }
         case '<': {
             aprs_station_capabilities_t cap;
-            if (aprs_decode_station_capabilities(frame.info, &cap) == 0) {
+            if (aprs_decode_station_capabilities(info, &cap) == 0) {
                 printf("Capabilities: %s\n", cap.capabilities_text);
             } else {
                 printf("Failed to decode station capabilities\n");
@@ -471,26 +447,11 @@ void aprs_frame_print(unsigned char *aprs_frame, int aprs_len) {
         }
         case '`':
         case '\'': {
-            aprs_mice_t mice;
-            aprs_address_t source;
-            aprs_address_t digipeaters[8];
-            int num_digipeaters;
-            if (aprs_decode_mice_frame((const char*) aprs_frame, aprs_len, &mice, &source, digipeaters, &num_digipeaters) == 0) {
-                printf("Mic-E Position: %.6f, %.6f\n", mice.latitude, mice.longitude);
-                printf("Speed: %d knots\n", mice.speed);
-                printf("Course: %d degrees\n", mice.course);
-                printf("Symbol Table: %c\n", mice.symbol_table);
-                printf("Symbol Code: %c\n", mice.symbol_code);
-                printf("Message Code: %s\n", mice.message_code);
-            } else {
-                printf("Failed to decode Mic-E packet\n");
-            }
+            printf("Mic-E packet detected, but destination field is required for decoding\n");
             break;
         }
         default:
             printf("Unsupported or unknown DTI: %c\n", dti);
-        break;
+            break;
     }
-
-    free(frame.info);
 }

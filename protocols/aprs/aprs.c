@@ -26,7 +26,6 @@
 #include <stddef.h>
 #include <ctype.h>
 
-#include "common.h"
 #include "aprs.h"
 
 /**
@@ -205,61 +204,6 @@ double aprs_parse_lon(const char *str, int *ambiguity) {
     return lon;
 }
 
-int aprs_encode_address(char *buf, const aprs_address_t *addr, bool is_last, bool is_digipeater) {
-    for (int i = 0; i < 6; i++) {
-        char c = addr->callsign[i];
-        if (c == 0)
-            c = ' ';
-        buf[i] = (c << 1) & 0xFE;
-    }
-    uint8_t ssid_byte = (addr->ssid & 0x0F) << 1;
-    buf[6] = ssid_byte;
-    if (is_last) {
-        buf[6] |= 0x01; // set end-of-address bit
-    }
-    return 7;
-}
-
-int aprs_encode_addresses(char *buf, const aprs_frame_t *frame) {
-    int offset = 0;
-    offset += aprs_encode_address(buf + offset, &frame->destination, false, false);
-    // Set C-bit for destination
-    buf[6] |= 0x80;
-    bool source_is_last = (frame->num_digipeaters == 0);
-    offset += aprs_encode_address(buf + offset, &frame->source, source_is_last, false);
-    for (int i = 0; i < frame->num_digipeaters; i++) {
-        bool is_last = (i == frame->num_digipeaters - 1);
-        offset += aprs_encode_address(buf + offset, &frame->digipeaters[i], is_last, true);
-    }
-    return offset;
-}
-
-int aprs_encode_frame(char *buf, size_t buf_len, const aprs_frame_t *frame) {
-    if (frame->num_digipeaters > 8 || frame->info_len > 256) {
-        return -1;
-    }
-    size_t addr_len = 7 * (2 + frame->num_digipeaters);
-    size_t total_len = 1 + addr_len + 1 + 1 + frame->info_len + 2 + 1; // start flag, addresses, control, PID, info, FCS, end flag
-    if (buf_len < total_len) {
-        return -1;
-    }
-    char *p = buf;
-    *p++ = 0x7E; // start flag
-    int written = aprs_encode_addresses(p, frame);
-    p += written;
-    *p++ = 0x03; // control: UI frame
-    *p++ = 0xF0; // PID: no layer 3
-    memcpy(p, frame->info, frame->info_len);
-    p += frame->info_len;
-    unsigned char *fcs_start = (unsigned char*) buf + 1;
-    size_t fcs_len = addr_len + 1 + 1 + frame->info_len;
-    uint16_t fcs = CRC(fcs_start, fcs_len);
-    *p++ = fcs & 0xFF;
-    *p++ = (fcs >> 8) & 0xFF;
-    *p++ = 0x7E; // end flag
-    return p - buf;
-}
-
 char* lat_to_aprs(double lat, int ambiguity) {
     static char buf[9];  // DDMM.hhN + null terminator
     if (lat < -90 || lat > 90 || ambiguity < 0 || ambiguity > 4) {
@@ -406,45 +350,6 @@ int aprs_encode_message(char *info, size_t len, const aprs_message_t *data) {
     }
 
     return ret;
-}
-
-int aprs_decode_address(const char *buf, aprs_address_t *addr, bool *is_last) {
-    for (int i = 0; i < 6; i++) {
-        unsigned char byte = (unsigned char) buf[i];
-        char c = byte >> 1;
-        addr->callsign[i] = (c == ' ') ? '\0' : c;
-    }
-    addr->callsign[6] = '\0';
-    unsigned char ssid_byte = (unsigned char) buf[6];
-    addr->ssid = (ssid_byte >> 1) & 0x0F;
-    *is_last = (ssid_byte & 0x01) != 0;
-    return 7;
-}
-
-int aprs_decode_frame(const char *buf, size_t len, aprs_frame_t *frame) {
-    if (len < 17 || buf[0] != 0x7E || buf[len - 1] != 0x7E)
-        return -1;
-    int offset = 1;
-    bool is_last;
-    offset += aprs_decode_address(buf + offset, &frame->destination, &is_last);
-    offset += aprs_decode_address(buf + offset, &frame->source, &is_last);
-    frame->num_digipeaters = 0;
-    while (!is_last && frame->num_digipeaters < 8 && offset < len - 4) {
-        offset += aprs_decode_address(buf + offset, &frame->digipeaters[frame->num_digipeaters], &is_last);
-        frame->num_digipeaters++;
-    }
-    if ((unsigned char) buf[offset] != 0x03 || (unsigned char) buf[offset + 1] != 0xF0)
-        return -1;
-    offset += 2;
-    size_t info_len = len - offset - 3;
-    frame->info = malloc(info_len + 1);
-    memcpy(frame->info, buf + offset, info_len);
-    frame->info[info_len] = '\0';
-    frame->info_len = info_len;
-    uint16_t fcs = CRC((unsigned char*) buf + 1, len - 4);
-    if (((unsigned char) buf[len - 3] != (fcs & 0xFF)) || ((unsigned char) buf[len - 2] != (fcs >> 8)))
-        return -1;
-    return len;
 }
 
 int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data) {
@@ -878,7 +783,6 @@ int aprs_parse_weather_field(const char *data, char field_id, char *value, size_
     return -1;
 }
 
-// Function to encode the Mic-E destination address
 int aprs_encode_mice_destination(char *dest_str, const aprs_mice_t *data) {
     // Compute latitude digits
     double lat = fabs(data->latitude);
@@ -1012,7 +916,6 @@ int aprs_decode_mice_destination(const char *dest_str, aprs_mice_t *data, int *m
     return 0;
 }
 
-// Function to encode the Mic-E information field
 int aprs_encode_mice_info(char *info, size_t len, const aprs_mice_t *data) {
     if (len < 9) {
         return -1; // Not enough space
@@ -1128,87 +1031,6 @@ int aprs_decode_mice_info(const char *info, size_t len, aprs_mice_t *data, bool 
     return 0; // Success
 }
 
-// Function to encode a complete Mic-E frame
-int aprs_encode_mice_frame(char *buf, size_t buf_len, const aprs_mice_t *data, const aprs_address_t *source, const aprs_address_t *digipeaters,
-        int num_digipeaters) {
-    char dest_str[7];
-    if (aprs_encode_mice_destination(dest_str, data) != 0) {
-        return -1;
-    }
-
-    char info[256];
-    int info_len = aprs_encode_mice_info(info, sizeof(info), data);
-    if (info_len < 0) {
-        return -1;
-    }
-
-    aprs_frame_t frame;
-    // Set destination address
-    strncpy(frame.destination.callsign, dest_str, 6);
-    frame.destination.callsign[6] = '\0';
-    frame.destination.ssid = 0; // Default SSID
-
-    // Set source address
-    frame.source = *source;
-
-    // Set digipeaters
-    if (num_digipeaters > 8) {
-        return -1;
-    }
-    memcpy(frame.digipeaters, digipeaters, num_digipeaters * sizeof(aprs_address_t));
-    frame.num_digipeaters = num_digipeaters;
-
-    // Set info
-    frame.info = info;
-    frame.info_len = info_len;
-
-    // Encode the frame
-    return aprs_encode_frame(buf, buf_len, &frame);
-}
-
-int aprs_decode_mice_frame(const char *buf, size_t len, aprs_mice_t *data, aprs_address_t *source, aprs_address_t *digipeaters, int *num_digipeaters) {
-    aprs_frame_t frame;
-    if (aprs_decode_frame(buf, len, &frame) < 0) {
-        return -1; // Failed to decode AX.25 frame
-    }
-
-    // Extract destination address
-    char dest_str[7];
-    strncpy(dest_str, frame.destination.callsign, 6);
-    dest_str[6] = '\0';
-
-    // Decode destination
-    int message_bits;
-    bool ns, long_offset, we;
-    if (aprs_decode_mice_destination(dest_str, data, &message_bits, &ns, &long_offset, &we) < 0) {
-        free(frame.info);
-        return -1;
-    }
-
-    // Decode information field
-    if (aprs_decode_mice_info(frame.info, frame.info_len, data, long_offset, we) < 0) {
-        free(frame.info);
-        return -1;
-    }
-
-    // Determine message code
-    const char *standard_codes[8] = { "Emergency", "M6", "M5", "M4", "M3", "M2", "M1", "M0" };
-    const char *custom_codes[8] = { "Emergency", "C6", "C5", "C4", "C3", "C2", "C1", "C0" };
-    bool is_standard = (frame.info[0] == '`');
-    strcpy(data->message_code, is_standard ? standard_codes[message_bits] : custom_codes[message_bits]);
-
-    // Set source and digipeaters
-    *source = frame.source;
-    *num_digipeaters = frame.num_digipeaters;
-    for (int i = 0; i < frame.num_digipeaters; i++) {
-        digipeaters[i] = frame.digipeaters[i];
-    }
-
-    free(frame.info);
-    return 0;
-}
-
-// Function to encode a telemetry packet
 int aprs_encode_telemetry(char *info, size_t len, const aprs_telemetry_t *data) {
     if (len < 30) {
         return -1;
@@ -1232,7 +1054,6 @@ int aprs_encode_telemetry(char *info, size_t len, const aprs_telemetry_t *data) 
     return ret;
 }
 
-// Function to decode a telemetry packet
 int aprs_decode_telemetry(const char *info, aprs_telemetry_t *data) {
     if (info[0] != 'T' || info[1] != '#') {
         return -1;
