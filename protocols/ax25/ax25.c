@@ -701,38 +701,38 @@ uint8_t* ax25_unnumbered_frame_encode(const ax25_unnumbered_frame_t *frame, size
 
 ax25_unnumbered_information_frame_t* ax25_unnumbered_information_frame_decode(ax25_frame_header_t *header, bool pf, const uint8_t *data, size_t len,
         uint8_t *err) {
-    *err = 0;
-    ax25_unnumbered_information_frame_t *frame = malloc(sizeof(ax25_unnumbered_information_frame_t));
-    if (!frame) {
-        *err = 2;
+    if (len < 1) { // Need at least PID byte
+        *err = 1;
         return NULL;
     }
-    frame->base.base.type = AX25_FRAME_UNNUMBERED_INFORMATION;
-    frame->base.base.header = *header;
-    frame->base.pf = pf;
-    frame->base.modifier = 0x03;
 
-    if (len == 0) {
-        frame->pid = 0;
-        frame->payload_len = 0;
-        frame->payload = NULL;
-    } else {
-        if (len < 1) {
-            *err = 1;
-            free(frame);
-            return NULL;
-        }
-        frame->pid = data[0];
-        frame->payload_len = len - 1;
-        frame->payload = malloc(frame->payload_len);
-        if (!frame->payload && frame->payload_len > 0) {
-            *err = 3;
-            free(frame);
-            return NULL;
-        }
-        memcpy(frame->payload, data + 1, frame->payload_len);
+    ax25_unnumbered_information_frame_t *ui_frame = malloc(sizeof(ax25_unnumbered_information_frame_t));
+    if (!ui_frame) {
+        *err = 1;
+        return NULL;
     }
-    return frame;
+
+    ui_frame->base.base.type = AX25_FRAME_UNNUMBERED_INFORMATION;
+    ui_frame->base.base.header = *header;
+    ui_frame->base.pf = pf;
+    ui_frame->base.modifier = 0x03; // UI frame modifier
+    ui_frame->pid = data[0];
+
+    // Allocate payload with an extra byte for null terminator
+    ui_frame->payload_len = len - 1;
+    ui_frame->payload = malloc(ui_frame->payload_len + 1); // +1 for null terminator
+    if (!ui_frame->payload) {
+        *err = 1;
+        free(ui_frame);
+        return NULL;
+    }
+
+    // Copy payload and ensure null termination
+    memcpy(ui_frame->payload, data + 1, ui_frame->payload_len);
+    ui_frame->payload[ui_frame->payload_len] = '\0';
+
+    *err = 0;
+    return ui_frame;
 }
 
 uint8_t* ax25_unnumbered_information_frame_encode(const ax25_unnumbered_information_frame_t *frame, size_t *len, uint8_t *err) {

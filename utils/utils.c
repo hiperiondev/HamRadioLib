@@ -318,7 +318,7 @@ void aprs_frame_print(const unsigned char *aprs_frame, int aprs_len) {
     }
 
     // Treat the input as the raw APRS information field
-    const char *info = (const char *)aprs_frame;
+    const char *info = (const char*) aprs_frame;
 
     // Extract and print the Data Type Indicator (DTI)
     char dti = info[0];
@@ -452,6 +452,6 @@ void aprs_frame_print(const unsigned char *aprs_frame, int aprs_len) {
         }
         default:
             printf("Unsupported or unknown DTI: %c\n", dti);
-            break;
+        break;
     }
 }
