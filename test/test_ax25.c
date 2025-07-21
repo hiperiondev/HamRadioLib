@@ -1512,12 +1512,13 @@ int test_invalid_address_field() {
 int test_valid_address_field() {
     printf("test_valid_address_field\n");
     uint8_t err = 0;
-    // Create a frame with destination (E=0) and source (E=1)
-    unsigned char frame[15] = { 0x82, 0x82, 0x82, 0x82, 0x82, 0x82, 0x60, // Destination: AAAAAA-0, E=0
-            0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x61, // Source: BBBBBB-0, E=1
-            0x03  // Control byte for UI
+    // Create a frame with destination (E=0, C=1) and source (E=1, C=0), with PID
+    unsigned char frame[16] = { 0x82, 0x82, 0x82, 0x82, 0x82, 0x82, 0xE0, // Destination: AAAAAA-0, C=1, E=0
+            0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x61, // Source: BBBBBB-0, C=0, E=1
+            0x03,  // Control byte for UI
+            0xF0   // PID: no layer 3 protocol
             };
-    size_t frame_len = 15;
+    size_t frame_len = 16;
     ax25_frame_t *decoded_frame = ax25_frame_decode(frame, frame_len, MODULO128_AUTO, &err);
     TEST_ASSERT(decoded_frame != NULL && err == 0, "Decoding frame with valid address field", err);
     if (decoded_frame) {
