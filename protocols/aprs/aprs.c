@@ -65,9 +65,9 @@ double aprs_parse_lat(const char *str, int *ambiguity) {
     if (strlen(str) != 8) {
         return NAN;
     }
-    char deg_str[3] = {str[0], str[1], '\0'};
-    char min_str[3] = {str[2], str[3], '\0'};
-    char frac_str[3] = {str[5], str[6], '\0'};
+    char deg_str[3] = { str[0], str[1], '\0' };
+    char min_str[3] = { str[2], str[3], '\0' };
+    char frac_str[3] = { str[5], str[6], '\0' };
     char dir = str[7];
 
     if (str[4] != '.') {
@@ -105,7 +105,8 @@ double aprs_parse_lat(const char *str, int *ambiguity) {
     } else {
         // Replace spaces with '0' for parsing
         for (int i = 0; i < 2; i++) {
-            if (min_str[i] == ' ') min_str[i] = '0';
+            if (min_str[i] == ' ')
+                min_str[i] = '0';
         }
         minutes = atof(min_str);
     }
@@ -115,7 +116,8 @@ double aprs_parse_lat(const char *str, int *ambiguity) {
     if (*ambiguity <= 1) {
         // Replace spaces with '0'
         for (int i = 0; i < 2; i++) {
-            if (frac_str[i] == ' ') frac_str[i] = '0';
+            if (frac_str[i] == ' ')
+                frac_str[i] = '0';
         }
         frac_min = atof(frac_str) / 100.0;
     } else if (*ambiguity == 2) {
@@ -135,9 +137,9 @@ double aprs_parse_lon(const char *str, int *ambiguity) {
     if (strlen(str) != 9) {
         return NAN;
     }
-    char deg_str[4] = {str[0], str[1], str[2], '\0'};
-    char min_str[3] = {str[3], str[4], '\0'};
-    char frac_str[3] = {str[6], str[7], '\0'};
+    char deg_str[4] = { str[0], str[1], str[2], '\0' };
+    char min_str[3] = { str[3], str[4], '\0' };
+    char frac_str[3] = { str[6], str[7], '\0' };
     char dir = str[8];
 
     if (str[5] != '.') {
@@ -175,7 +177,8 @@ double aprs_parse_lon(const char *str, int *ambiguity) {
     } else {
         // Replace spaces with '0' for parsing
         for (int i = 0; i < 2; i++) {
-            if (min_str[i] == ' ') min_str[i] = '0';
+            if (min_str[i] == ' ')
+                min_str[i] = '0';
         }
         minutes = atof(min_str);
     }
@@ -185,7 +188,8 @@ double aprs_parse_lon(const char *str, int *ambiguity) {
     if (*ambiguity <= 1) {
         // Replace spaces with '0'
         for (int i = 0; i < 2; i++) {
-            if (frac_str[i] == ' ') frac_str[i] = '0';
+            if (frac_str[i] == ' ')
+                frac_str[i] = '0';
         }
         frac_min = atof(frac_str) / 100.0;
     } else if (*ambiguity == 2) {
@@ -1251,5 +1255,115 @@ int aprs_decode_telemetry(const char *info, aprs_telemetry_t *data) {
     strncpy(bits_str, p, 8);
     bits_str[8] = '\0';
     data->digital = strtoul(bits_str, NULL, 2);
+    return 0;
+}
+
+int aprs_encode_status(char *info, size_t len, const aprs_status_t *data) {
+    if (!info || !data || len < 1)
+        return -1;
+    size_t pos = 0;
+    info[pos++] = '>';
+    if (data->has_timestamp) {
+        if (pos + 7 > len)
+            return -1;
+        memcpy(info + pos, data->timestamp, 7);
+        pos += 7;
+    }
+    size_t text_len = strlen(data->status_text);
+    if (text_len > 62)
+        text_len = 62;
+    if (pos + text_len > len)
+        return -1;
+    memcpy(info + pos, data->status_text, text_len);
+    pos += text_len;
+    if (pos < len)
+        info[pos] = '\0'; // Null-terminate if space allows
+    return pos;
+}
+
+int aprs_decode_status(const char *info, aprs_status_t *data) {
+    if (!info || !data)
+        return -1;
+    if (info[0] != '>')
+        return -1;
+    size_t len = strlen(info);
+    if (len < 1)
+        return -1;
+    size_t pos = 1;
+    if (len >= 8 && isdigit(info[1]) && isdigit(info[2]) && isdigit(info[3]) && isdigit(info[4]) && isdigit(info[5]) && isdigit(info[6]) && info[7] == 'z') {
+        data->has_timestamp = true;
+        memcpy(data->timestamp, info + 1, 7);
+        data->timestamp[7] = '\0';
+        pos += 7;
+    } else {
+        data->has_timestamp = false;
+        data->timestamp[0] = '\0';
+    }
+    size_t text_len = len - pos;
+    if (text_len > 62)
+        text_len = 62;
+    memcpy(data->status_text, info + pos, text_len);
+    data->status_text[text_len] = '\0';
+    return 0;
+}
+
+int aprs_encode_general_query(char *info, size_t len, const aprs_general_query_t *data) {
+    if (!info || !data || len < 3)
+        return -1;
+    size_t type_len = strlen(data->query_type);
+    if (type_len == 0 || type_len > 10)
+        return -1;
+    size_t total_len = 2 + type_len;
+    if (total_len > len)
+        return -1;
+    info[0] = '?';
+    memcpy(info + 1, data->query_type, type_len);
+    info[1 + type_len] = '?';
+    if (total_len < len)
+        info[total_len] = '\0'; // Null-terminate if space allows
+    return total_len;
+}
+
+int aprs_decode_general_query(const char *info, aprs_general_query_t *data) {
+    if (!info || !data)
+        return -1;
+    size_t len = strlen(info);
+    if (len < 3 || info[0] != '?' || info[len - 1] != '?')
+        return -1;
+    size_t type_len = len - 2;
+    if (type_len > 10)
+        return -1;
+    memcpy(data->query_type, info + 1, type_len);
+    data->query_type[type_len] = '\0';
+    return 0;
+}
+
+int aprs_encode_station_capabilities(char *info, size_t len, const aprs_station_capabilities_t *data) {
+    if (!info || !data || len < 1)
+        return -1;
+    size_t text_len = strlen(data->capabilities_text);
+    if (text_len > 99)
+        text_len = 99;
+    size_t total_len = 1 + text_len;
+    if (total_len > len)
+        return -1;
+    info[0] = '<';
+    memcpy(info + 1, data->capabilities_text, text_len);
+    if (total_len < len)
+        info[total_len] = '\0'; // Null-terminate if space allows
+    return total_len;
+}
+
+int aprs_decode_station_capabilities(const char *info, aprs_station_capabilities_t *data) {
+    if (!info || !data)
+        return -1;
+    if (info[0] != '<')
+        return -1;
+    size_t len = strlen(info);
+    if (len > 100)
+        len = 100;
+    size_t text_len = len - 1;
+    memcpy(data->capabilities_text, info + 1, text_len);
+    data->capabilities_text[text_len] = '\0';
     return 0;
 }

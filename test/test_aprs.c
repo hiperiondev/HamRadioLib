@@ -614,6 +614,68 @@ int test_aprs_telemetry() {
     return 0;
 }
 
+int test_aprs_status() {
+    uint8_t err = 0;
+    char info[100] = { 0 };  // Zero-initialized
+    aprs_status_t status = { .has_timestamp = false, .status_text = "Test status" };
+    int len = aprs_encode_status(info, sizeof(info), &status);
+    TEST_ASSERT(len == 12, "Status encoding length incorrect", err);
+    TEST_ASSERT(strncmp(info, ">Test status", len) == 0, "Encoded status incorrect", err);
+    aprs_status_t decoded;
+    int ret = aprs_decode_status(info, &decoded);
+    TEST_ASSERT(ret == 0, "Status decoding failed", err);
+    TEST_ASSERT(decoded.has_timestamp == false, "Decoded has_timestamp incorrect", err);
+    TEST_ASSERT(strcmp(decoded.status_text, "Test status") == 0, "Decoded status text incorrect", err);
+    // With timestamp
+    status.has_timestamp = true;
+    strcpy(status.timestamp, "092345z");
+    len = aprs_encode_status(info, sizeof(info), &status);
+    TEST_ASSERT(len == 19, "Status with timestamp encoding length incorrect", err);
+    TEST_ASSERT(strncmp(info, ">092345zTest status", len) == 0, "Encoded status with timestamp incorrect", err);
+    ret = aprs_decode_status(info, &decoded);
+    TEST_ASSERT(ret == 0, "Status with timestamp decoding failed", err);
+    TEST_ASSERT(decoded.has_timestamp == true, "Decoded has_timestamp incorrect", err);
+    TEST_ASSERT(strcmp(decoded.timestamp, "092345z") == 0, "Decoded timestamp incorrect", err);
+    TEST_ASSERT(strcmp(decoded.status_text, "Test status") == 0, "Decoded status text incorrect", err);
+    return err;
+}
+
+int test_aprs_general_query() {
+    uint8_t err = 0;
+    char info[100] = { 0 };  // Zero-initialized
+    aprs_general_query_t query = { .query_type = "APRS" };
+    int len = aprs_encode_general_query(info, sizeof(info), &query);
+    TEST_ASSERT(len == 6, "General query encoding length incorrect", err);
+    TEST_ASSERT(strncmp(info, "?APRS?", len) == 0, "Encoded general query incorrect", err);
+    aprs_general_query_t decoded;
+    int ret = aprs_decode_general_query(info, &decoded);
+    TEST_ASSERT(ret == 0, "General query decoding failed", err);
+    TEST_ASSERT(strcmp(decoded.query_type, "APRS") == 0, "Decoded query type incorrect", err);
+    // Another query type
+    strcpy(query.query_type, "WX");
+    len = aprs_encode_general_query(info, sizeof(info), &query);
+    TEST_ASSERT(len == 4, "General query encoding length incorrect", err);
+    TEST_ASSERT(strncmp(info, "?WX?", len) == 0, "Encoded general query incorrect", err);
+    ret = aprs_decode_general_query(info, &decoded);
+    TEST_ASSERT(ret == 0, "General query decoding failed", err);
+    TEST_ASSERT(strcmp(decoded.query_type, "WX") == 0, "Decoded query type incorrect", err);
+    return err;
+}
+
+int test_aprs_station_capabilities() {
+    uint8_t err = 0;
+    char info[100] = { 0 };  // Zero-initialized
+    aprs_station_capabilities_t cap = { .capabilities_text = "IGATE,MSG_CNT=43,LOC_CNT=14" };
+    int len = aprs_encode_station_capabilities(info, sizeof(info), &cap);
+    TEST_ASSERT(len == 28, "Station capabilities encoding length incorrect", err);
+    TEST_ASSERT(strncmp(info, "<IGATE,MSG_CNT=43,LOC_CNT=14", len) == 0, "Encoded station capabilities incorrect", err);
+    aprs_station_capabilities_t decoded;
+    int ret = aprs_decode_station_capabilities(info, &decoded);
+    TEST_ASSERT(ret == 0, "Station capabilities decoding failed", err);
+    TEST_ASSERT(strcmp(decoded.capabilities_text, "IGATE,MSG_CNT=43,LOC_CNT=14") == 0, "Decoded capabilities text incorrect", err);
+    return err;
+}
+
 int test_aprs_main() {
     int result = 0;
     printf("\n----------------------------------------------------------------------------------\n");
@@ -631,6 +693,9 @@ int test_aprs_main() {
     result |= test_aprs_object();
     result |= test_aprs_mice();
     result |= test_aprs_telemetry();
+    result |= test_aprs_status();
+    result |= test_aprs_general_query();
+    result |= test_aprs_station_capabilities();
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Tests APRS Completed. %s\n", result == 0 ? "All tests passed" : "Some tests failed");
     printf("----------------------------------------------------------------------------------\n\n");

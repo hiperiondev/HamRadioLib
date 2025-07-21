@@ -22,9 +22,6 @@
 #ifndef APRS_H_
 #define APRS_H_
 
-#ifndef APRS_H
-#define APRS_H
-
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -127,6 +124,20 @@ typedef struct {
     double analog[5];     // Five analog values (0-255)
     uint8_t digital;      // Eight digital bits (0 or 1)
 } aprs_telemetry_t;
+
+typedef struct {
+    bool has_timestamp;
+    char timestamp[8]; // "DDHHMMz" or empty if no timestamp
+    char status_text[63]; // up to 62 characters + null terminator
+} aprs_status_t;
+
+typedef struct {
+    char query_type[11]; // e.g., "APRS", up to 10 characters + null terminator
+} aprs_general_query_t;
+
+typedef struct {
+    char capabilities_text[100]; // up to 99 characters + null terminator
+} aprs_station_capabilities_t;
 
 // Function prototypes
 /**
@@ -241,7 +252,11 @@ int aprs_decode_telemetry(const char *info, aprs_telemetry_t *data);
 int aprs_decode_mice_destination(const char *dest_str, aprs_mice_t *data, int *message_bits, bool *ns, bool *long_offset, bool *we);
 int aprs_decode_mice_info(const char *info, size_t len, aprs_mice_t *data, bool long_offset, bool we);
 int aprs_decode_mice_frame(const char *buf, size_t len, aprs_mice_t *data, aprs_address_t *source, aprs_address_t *digipeaters, int *num_digipeaters);
-
-#endif
+int aprs_encode_status(char *info, size_t len, const aprs_status_t *data);
+int aprs_decode_status(const char *info, aprs_status_t *data);
+int aprs_encode_general_query(char *info, size_t len, const aprs_general_query_t *data);
+int aprs_decode_general_query(const char *info, aprs_general_query_t *data);
+int aprs_encode_station_capabilities(char *info, size_t len, const aprs_station_capabilities_t *data);
+int aprs_decode_station_capabilities(const char *info, aprs_station_capabilities_t *data);
 
 #endif /* APRS_H_ */
