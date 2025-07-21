@@ -27,6 +27,9 @@
 
 #include "test_common.h"
 #include "aprs.h"
+#include "ax25.h"
+#include "hdlc.h"
+#include "utils.h"
 
 static uint32_t assert_count = 0;
 
@@ -676,6 +679,157 @@ int test_aprs_station_capabilities() {
     return err;
 }
 
+int test_aprs_print_real_packets() {
+    uint8_t err = 0;
+
+    // Test 1: Print a real APRS position packet
+    {
+        aprs_frame_t frame = {
+            .destination = { .callsign = "APRS  ", .ssid = 0 },
+            .source = { .callsign = "N0CALL", .ssid = 7 },
+            .num_digipeaters = 0,
+            .info = "!4903.50N/07201.75W-A test position",
+            .info_len = 28
+        };
+        unsigned char buf[256];
+        int len = aprs_encode_frame((char *)buf, 256, &frame);
+        if (len < 0) {
+            printf("Failed to encode APRS frame for Test 1\n");
+            return 1;
+        }
+        printf("\nTest 1: Printing raw APRS position packet\n");
+        aprs_frame_print(buf, len);
+    }
+
+    // Test 2: Decode an AX.25 packet with digipeater and print APRS content
+    {
+        aprs_frame_t frame2 = {
+            .destination = { .callsign = "APRS  ", .ssid = 0 },
+            .source = { .callsign = "N0CALL", .ssid = 7 },
+            .digipeaters = { { .callsign = "WIDE1 ", .ssid = 1 } },
+            .num_digipeaters = 1,
+            .info = ":WB2OSZ-7 :Hello",
+            .info_len = 16
+        };
+        unsigned char buf2[256];
+        int len2 = aprs_encode_frame((char *)buf2, 256, &frame2);
+        if (len2 < 0) {
+            printf("Failed to encode APRS frame with digipeater for Test 2\n");
+            return 1;
+        }
+        printf("\nTest 2: Decoding AX.25 packet and printing APRS message\n");
+        ax25_frame_t *decoded_frame = ax25_frame_decode(buf2 + 1, len2 - 2, MODULO128_FALSE, &err);
+        if (decoded_frame && err == 0) {
+            if (decoded_frame->type == AX25_FRAME_UNNUMBERED_INFORMATION) {
+                aprs_frame_print(buf2, len2);
+            } else {
+                printf("Decoded frame is not a UI frame (type: %d)\n", decoded_frame->type);
+            }
+            ax25_frame_free(decoded_frame, &err);
+        } else {
+            printf("AX.25 decoding failed with error %d\n", err);
+        }
+    }
+
+    // Test 3: Simulate HDLC decoding and print APRS content
+    {
+        aprs_frame_t frame3 = {
+            .destination = { .callsign = "APRS  ", .ssid = 0 },
+            .source = { .callsign = "N0CALL", .ssid = 7 },
+            .num_digipeaters = 0,
+            .info = "!4903.50N/07201.75W-A test position",
+            .info_len = 28
+        };
+        unsigned char buf3[256];
+        int len3 = aprs_encode_frame((char *)buf3, 256, &frame3);
+        if (len3 < 0) {
+            printf("Failed to encode APRS frame for Test 3\n");
+            return 1;
+        }
+        printf("\nTest 3: Decoding HDLC packet to AX.25 and printing APRS position (simplified)\n");
+        aprs_frame_print(buf3, len3);
+        printf("Note: HDLC encoding simulated with a valid APRS frame.\n");
+    }
+
+    // Test 4: Weather report packet
+    {
+        aprs_frame_t frame4 = {
+            .destination = { .callsign = "APRS  ", .ssid = 0 },
+            .source = { .callsign = "N0CALL", .ssid = 7 },
+            .num_digipeaters = 0,
+            .info = "@141923z3859.11N/07629.23W_223/030t077r000p000b10132h50",
+            .info_len = 50
+        };
+        unsigned char buf4[256];
+        int len4 = aprs_encode_frame((char *)buf4, 256, &frame4);
+        if (len4 < 0) {
+            printf("Failed to encode APRS frame for Test 4\n");
+            return 1;
+        }
+        printf("\nTest 4: Printing weather report packet\n");
+        aprs_frame_print(buf4, len4);
+    }
+
+    // Test 5: Object position packet
+    {
+        aprs_frame_t frame5 = {
+            .destination = { .callsign = "APRS  ", .ssid = 0 },
+            .source = { .callsign = "N0CALL", .ssid = 7 },
+            .num_digipeaters = 0,
+            .info = ";BALLOON  *141923z3859.11N/07629.23W$223/030/Flying high",
+            .info_len = 50
+        };
+        unsigned char buf5[256];
+        int len5 = aprs_encode_frame((char *)buf5, 256, &frame5);
+        if (len5 < 0) {
+            printf("Failed to encode APRS frame for Test 5\n");
+            return 1;
+        }
+        printf("\nTest 5: Printing object position packet\n");
+        aprs_frame_print(buf5, len5);
+    }
+
+    // Test 6: Position with PHG packet
+    {
+        aprs_frame_t frame6 = {
+            .destination = { .callsign = "APRS  ", .ssid = 0 },
+            .source = { .callsign = "N0CALL", .ssid = 7 },
+            .num_digipeaters = 0,
+            .info = "!4903.50N/07201.75W#PHG5360",
+            .info_len = 24
+        };
+        unsigned char buf6[256];
+        int len6 = aprs_encode_frame((char *)buf6, 256, &frame6);
+        if (len6 < 0) {
+            printf("Failed to encode APRS frame for Test 6\n");
+            return 1;
+        }
+        printf("\nTest 6: Printing position with PHG packet\n");
+        aprs_frame_print(buf6, len6);
+    }
+
+    // Test 7: Grid square report packet
+    {
+        aprs_frame_t frame7 = {
+            .destination = { .callsign = "APRS  ", .ssid = 0 },
+            .source = { .callsign = "N0CALL", .ssid = 7 },
+            .num_digipeaters = 0,
+            .info = ">FM19SX Grid square report",
+            .info_len = 26
+        };
+        unsigned char buf7[256];
+        int len7 = aprs_encode_frame((char *)buf7, 256, &frame7);
+        if (len7 < 0) {
+            printf("Failed to encode APRS frame for Test 7\n");
+            return 1;
+        }
+        printf("\nTest 7: Printing grid square report packet\n");
+        aprs_frame_print(buf7, len7);
+    }
+
+    return err;
+}
+
 int test_aprs_main() {
     int result = 0;
     printf("\n----------------------------------------------------------------------------------\n");
@@ -696,6 +850,10 @@ int test_aprs_main() {
     result |= test_aprs_status();
     result |= test_aprs_general_query();
     result |= test_aprs_station_capabilities();
+
+    printf("\n----------------------------------------------------------------------------------\n");
+    result |= test_aprs_print_real_packets();
+    printf("\n----------------------------------------------------------------------------------\n");
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Tests APRS Completed. %s\n", result == 0 ? "All tests passed" : "Some tests failed");
     printf("----------------------------------------------------------------------------------\n\n");

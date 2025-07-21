@@ -22,8 +22,9 @@
 #ifndef UTILS_H_
 #define UTILS_H_
 
-void ax25_hdlc_frame_print(unsigned char *hdlc_frame, int hdlc_len);
+void hdlc_frame_print(unsigned char *hdlc_frame, int hdlc_len);
 void ax25_frame_print(unsigned char *ax25_frame, int ax25_frame_len);
+void aprs_frame_print(unsigned char *aprs_frame, int aprs_len);
 
 unsigned char ReverseBits(unsigned char byte);
 

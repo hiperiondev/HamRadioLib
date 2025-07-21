@@ -1241,7 +1241,7 @@ void test_ax25_hdlc_frame_print() {
     int hdlc_len;
     unsigned char *hdlc_ui_frame = construct_hdlc_frame(ui_frame, sizeof(ui_frame), &hdlc_len);
     printf("HDLC UI Frame:\n");
-    ax25_hdlc_frame_print(hdlc_ui_frame, hdlc_len);
+    hdlc_frame_print(hdlc_ui_frame, hdlc_len);
     free(hdlc_ui_frame);
 
     // I-frame
@@ -1249,35 +1249,35 @@ void test_ax25_hdlc_frame_print() {
             ' ', 'W', 'o', 'r', 'l', 'd', '!' };
     unsigned char *hdlc_i_frame = construct_hdlc_frame(i_frame, sizeof(i_frame), &hdlc_len);
     printf("\nHDLC I-Frame:\n");
-    ax25_hdlc_frame_print(hdlc_i_frame, hdlc_len);
+    hdlc_frame_print(hdlc_i_frame, hdlc_len);
     free(hdlc_i_frame);
 
     // SABM frame
     unsigned char sabm_frame[] = { 0xAC, 0x82, 0x66, 0x84, 0x84, 0x84, 0xEE, 0xAC, 0x82, 0x66, 0x82, 0x82, 0x82, 0x63, 0x3F };
     unsigned char *hdlc_sabm_frame = construct_hdlc_frame(sabm_frame, sizeof(sabm_frame), &hdlc_len);
     printf("\nHDLC SABM Frame:\n");
-    ax25_hdlc_frame_print(hdlc_sabm_frame, hdlc_len);
+    hdlc_frame_print(hdlc_sabm_frame, hdlc_len);
     free(hdlc_sabm_frame);
 
     // UA frame
     unsigned char ua_frame[] = { 0xAC, 0x82, 0x66, 0x82, 0x82, 0x82, 0x62, 0xAC, 0x82, 0x66, 0x84, 0x84, 0x84, 0xEF, 0x73 };
     unsigned char *hdlc_ua_frame = construct_hdlc_frame(ua_frame, sizeof(ua_frame), &hdlc_len);
     printf("\nHDLC UA Frame:\n");
-    ax25_hdlc_frame_print(hdlc_ua_frame, hdlc_len);
+    hdlc_frame_print(hdlc_ua_frame, hdlc_len);
     free(hdlc_ua_frame);
 
     // RR frame
     unsigned char rr_frame[] = { 0xAC, 0x82, 0x66, 0x82, 0x82, 0x82, 0x62, 0xAC, 0x82, 0x66, 0x84, 0x84, 0x84, 0xEF, 0x31 };
     unsigned char *hdlc_rr_frame = construct_hdlc_frame(rr_frame, sizeof(rr_frame), &hdlc_len);
     printf("\nHDLC RR Frame:\n");
-    ax25_hdlc_frame_print(hdlc_rr_frame, hdlc_len);
+    hdlc_frame_print(hdlc_rr_frame, hdlc_len);
     free(hdlc_rr_frame);
 
     // DISC frame
     unsigned char disc_frame[] = { 0xAC, 0x82, 0x66, 0x84, 0x84, 0x84, 0xEE, 0xAC, 0x82, 0x66, 0x82, 0x82, 0x82, 0x63, 0x43 };
     unsigned char *hdlc_disc_frame = construct_hdlc_frame(disc_frame, sizeof(disc_frame), &hdlc_len);
     printf("\nHDLC DISC Frame:\n");
-    ax25_hdlc_frame_print(hdlc_disc_frame, hdlc_len);
+    hdlc_frame_print(hdlc_disc_frame, hdlc_len);
     free(hdlc_disc_frame);
 }
 
