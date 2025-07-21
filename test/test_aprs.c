@@ -25,19 +25,14 @@
 #include <stdint.h>
 #include <math.h>
 
+#include "common.h"
 #include "test_common.h"
 #include "utils.h"
+#include "ax25.h"
+#include "hdlc.h"
 #include "aprs.h"
 
 static uint32_t assert_count = 0;
-
-// Helper function to trim trailing spaces from a string
-static void trim_trailing_spaces(char *str) {
-    size_t len = strlen(str);
-    while (len > 0 && str[len - 1] == ' ') {
-        str[--len] = '\0';
-    }
-}
 
 int test_aprs_position_encoding_decoding() {
     uint8_t err = 0;
@@ -816,6 +811,97 @@ int test_aprs_packets() {
     return err;
 }
 
+int test_aprs_bulletin() {
+    uint8_t err = 0;
+
+    // Test 1: Bulletin with no message number
+    {
+        aprs_bulletin_t bulletin = { .bulletin_id = "BLN1", .message = "Test bulletin", .message_number = NULL };
+        char info[100];
+        int len = aprs_encode_bulletin(info, 100, &bulletin);
+        TEST_ASSERT(len == 24, "Bulletin encoding length incorrect", err);
+        TEST_ASSERT(strcmp(info, ":BLN1     :Test bulletin") == 0, "Encoded bulletin incorrect", err);
+        aprs_message_t decoded;
+        int ret = aprs_decode_message(info, &decoded);
+        TEST_ASSERT(ret == 0, "Bulletin decoding failed", err);
+        TEST_ASSERT(aprs_is_bulletin(&decoded), "Decoded message should be a bulletin", err);
+        trim_trailing_spaces(decoded.addressee);
+        TEST_ASSERT(strcmp(decoded.addressee, "BLN1") == 0, "Decoded addressee incorrect", err);
+        TEST_ASSERT(strcmp(decoded.message, "Test bulletin") == 0, "Decoded message incorrect", err);
+        TEST_ASSERT(decoded.message_number == NULL, "Message number should be NULL", err);
+        free(decoded.message);
+    }
+
+    // Test 2: Bulletin with message number
+    {
+        aprs_bulletin_t bulletin = { .bulletin_id = "BLN2", .message = "Emergency alert", .message_number = "123" };
+        char info[100];
+        int len = aprs_encode_bulletin(info, 100, &bulletin);
+        TEST_ASSERT(len == 31, "Bulletin encoding length incorrect", err);
+        TEST_ASSERT(strcmp(info, ":BLN2     :Emergency alert{123}") == 0, "Encoded bulletin incorrect", err);
+        aprs_message_t decoded;
+        int ret = aprs_decode_message(info, &decoded);
+        TEST_ASSERT(ret == 0, "Bulletin decoding failed", err);
+        TEST_ASSERT(aprs_is_bulletin(&decoded), "Decoded message should be a bulletin", err);
+        trim_trailing_spaces(decoded.addressee);
+        TEST_ASSERT(strcmp(decoded.addressee, "BLN2") == 0, "Decoded addressee incorrect", err);
+        TEST_ASSERT(strcmp(decoded.message, "Emergency alert") == 0, "Decoded message incorrect", err);
+        TEST_ASSERT(strcmp(decoded.message_number, "123") == 0, "Decoded message number incorrect", err);
+        free(decoded.message);
+        free(decoded.message_number);
+    }
+
+    return err;
+}
+
+int test_aprs_item_report() {
+    uint8_t err = 0;
+
+    // Test 1: Live item report with comment
+    {
+        aprs_item_report_t item = { .name = "ITEM1", .is_live = true, .latitude = 37.7749, .longitude = -122.4194,
+                                    .symbol_table = '/', .symbol_code = '>', .comment = "Test item" };
+        char info[100];
+        int len = aprs_encode_item_report(info, 100, &item);
+        TEST_ASSERT(len == 39, "Item report encoding length incorrect", err);
+        TEST_ASSERT(strcmp(info, ")ITEM1    !3746.49N/12225.16W>Test item") == 0, "Encoded item report incorrect", err);
+        aprs_item_report_t decoded;
+        int ret = aprs_decode_item_report(info, &decoded);
+        TEST_ASSERT(ret == 0, "Item report decoding failed", err);
+        TEST_ASSERT(strcmp(decoded.name, "ITEM1") == 0, "Decoded item name incorrect", err);
+        TEST_ASSERT(decoded.is_live == true, "Decoded live status incorrect", err);
+        TEST_ASSERT(fabs(decoded.latitude - 37.7749) < 0.001, "Decoded latitude incorrect", err);
+        TEST_ASSERT(fabs(decoded.longitude + 122.4194) < 0.001, "Decoded longitude incorrect", err);
+        TEST_ASSERT(decoded.symbol_table == '/', "Decoded symbol table incorrect", err);
+        TEST_ASSERT(decoded.symbol_code == '>', "Decoded symbol code incorrect", err);
+        TEST_ASSERT(strcmp(decoded.comment, "Test item") == 0, "Decoded comment incorrect", err);
+        free(decoded.comment);
+    }
+
+    // Test 2: Killed item report without comment
+    {
+        aprs_item_report_t item = { .name = "ITEM2", .is_live = false, .latitude = 37.7749, .longitude = -122.4194,
+                                    .symbol_table = '/', .symbol_code = '>', .comment = NULL };
+        char info[100];
+        int len = aprs_encode_item_report(info, 100, &item);
+        TEST_ASSERT(len == 30, "Killed item report encoding length incorrect", err);
+        TEST_ASSERT(strcmp(info, ")ITEM2    =3746.49N/12225.16W>") == 0, "Encoded killed item report incorrect", err);
+        aprs_item_report_t decoded;
+        int ret = aprs_decode_item_report(info, &decoded);
+        TEST_ASSERT(ret == 0, "Killed item report decoding failed", err);
+        TEST_ASSERT(strcmp(decoded.name, "ITEM2") == 0, "Decoded item name incorrect", err);
+        TEST_ASSERT(decoded.is_live == false, "Decoded live status incorrect", err);
+        TEST_ASSERT(fabs(decoded.latitude - 37.7749) < 0.001, "Decoded latitude incorrect", err);
+        TEST_ASSERT(fabs(decoded.longitude + 122.4194) < 0.001, "Decoded longitude incorrect", err);
+        TEST_ASSERT(decoded.symbol_table == '/', "Decoded symbol table incorrect", err);
+        TEST_ASSERT(decoded.symbol_code == '>', "Decoded symbol code incorrect", err);
+        TEST_ASSERT(decoded.comment != NULL && decoded.comment[0] == '\0', "Comment should be empty", err);
+        free(decoded.comment);
+    }
+
+    return err;
+}
+
 int test_aprs_main() {
     int result = 0;
     printf("\n----------------------------------------------------------------------------------\n");
@@ -835,6 +921,9 @@ int test_aprs_main() {
     result |= test_aprs_general_query();
     result |= test_aprs_station_capabilities();
     result |= test_aprs_packets();
+    result |= test_aprs_item_report();
+    result |= test_aprs_bulletin();
+
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Tests APRS Completed. %s\n", result == 0 ? "All tests passed" : "Some tests failed");
     printf("----------------------------------------------------------------------------------\n\n");

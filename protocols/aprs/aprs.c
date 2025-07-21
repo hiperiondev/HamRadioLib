@@ -26,6 +26,7 @@
 #include <stddef.h>
 #include <ctype.h>
 
+#include "common.h"
 #include "aprs.h"
 
 /**
@@ -1186,5 +1187,132 @@ int aprs_decode_station_capabilities(const char *info, aprs_station_capabilities
     size_t text_len = len - 1;
     memcpy(data->capabilities_text, info + 1, text_len);
     data->capabilities_text[text_len] = '\0';
+    return 0;
+}
+
+int aprs_encode_bulletin(char *info, size_t len, const aprs_bulletin_t *data) {
+    if (strlen(data->bulletin_id) > 4) {
+        return -1; // Bulletin ID too long
+    }
+    char addressee[10];
+    snprintf(addressee, 10, "%-9s", data->bulletin_id);
+    aprs_message_t msg;
+    strcpy(msg.addressee, addressee);
+    msg.addressee[9] = '\0';
+    msg.message = data->message;
+    msg.message_number = data->message_number;
+    return aprs_encode_message(info, len, &msg);
+}
+
+int aprs_encode_item_report(char *info, size_t len, const aprs_item_report_t *data) {
+    if (strlen(data->name) > 9) {
+        return -1; // Item name too long
+    }
+    if (data->symbol_table != '/' && data->symbol_table != '\\') {
+        return -1; // Invalid symbol table
+    }
+    if (!isprint(data->symbol_code)) {
+        return -1; // Invalid symbol code
+    }
+
+    char name_padded[10];
+    snprintf(name_padded, 10, "%-9s", data->name);
+
+    char *lat_str = lat_to_aprs(data->latitude, 0);
+    char *lon_str = lon_to_aprs(data->longitude, 0);
+    if (!lat_str || !lon_str) {
+        return -1;
+    }
+
+    char status_char = data->is_live ? '!' : '=';
+    int ret = snprintf(info, len, ")%s%c%s%c%s%c", name_padded, status_char, lat_str, data->symbol_table, lon_str, data->symbol_code);
+    if (ret < 0 || (size_t)ret >= len) {
+        return -1;
+    }
+
+    if (data->comment) {
+        int ret2 = snprintf(info + ret, len - ret, "%s", data->comment);
+        if (ret2 < 0 || (size_t)ret2 >= len - ret) {
+            return -1;
+        }
+        ret += ret2;
+    }
+
+    return ret;
+}
+
+bool aprs_is_bulletin(const aprs_message_t *msg) {
+    if (strncmp(msg->addressee, "BLN", 3) == 0 && isdigit(msg->addressee[3])) {
+        return true;
+    }
+    return false;
+}
+
+int aprs_decode_item_report(const char *info, aprs_item_report_t *data) {
+    size_t info_len = strlen(info);
+    if (info[0] != ')' || info_len < 30) {
+        return -1; // Minimum length for item report without comment
+    }
+
+    // Extract name (positions 1-9)
+    strncpy(data->name, info + 1, 9);
+    data->name[9] = '\0';
+    trim_trailing_spaces(data->name);
+
+    // Status character (position 10)
+    char status_char = info[10];
+    if (status_char == '!') {
+        data->is_live = true;
+    } else if (status_char == '=') {
+        data->is_live = false;
+    } else {
+        return -1; // Invalid status character
+    }
+
+    // Parse latitude (positions 11-18)
+    char lat_str[9];
+    strncpy(lat_str, info + 11, 8);
+    lat_str[8] = '\0';
+    int lat_ambiguity;
+    data->latitude = aprs_parse_lat(lat_str, &lat_ambiguity);
+    if (isnan(data->latitude)) {
+        return -1;
+    }
+
+    // Symbol table (position 19)
+    if (info[19] != '/' && info[19] != '\\') {
+        return -1; // Invalid symbol table
+    }
+    data->symbol_table = info[19];
+
+    // Parse longitude (positions 20-28)
+    char lon_str[10];
+    strncpy(lon_str, info + 20, 9);
+    lon_str[9] = '\0';
+    int lon_ambiguity;
+    data->longitude = aprs_parse_lon(lon_str, &lon_ambiguity);
+    if (isnan(data->longitude)) {
+        return -1;
+    }
+
+    // Symbol code (position 29)
+    if (!isprint(info[29])) {
+        return -1; // Invalid symbol code
+    }
+    data->symbol_code = info[29];
+
+    // Comment (position 30 onwards)
+    if (info_len > 30) {
+        data->comment = my_strdup(info + 30);
+        if (!data->comment) {
+            return -1; // Memory allocation failure
+        }
+    } else {
+        data->comment = my_strdup("");
+        if (!data->comment) {
+            return -1; // Memory allocation failure
+        }
+    }
+
     return 0;
 }

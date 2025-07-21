@@ -19,12 +19,3 @@
  *
  */
 
-#ifndef COMMON_H_
-#define COMMON_H_
-
-#include <stdint.h>
-
-uint16_t CRC(unsigned char *frame, int len);
-void trim_trailing_spaces(char *str);
-
-#endif /* COMMON_H_ */

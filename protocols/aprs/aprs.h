@@ -162,6 +162,77 @@ typedef struct {
 } aprs_station_capabilities_t;
 
 /**
+ * @brief Structure for APRS bulletin.
+ *
+ * This structure holds the bulletin ID and message text.
+ */
+typedef struct {
+    char bulletin_id[5];  ///< Bulletin ID, e.g., "BLN1", null-terminated.
+    char *message;        ///< Message text, up to 67 characters, null-terminated.
+    char *message_number; ///< Optional message number for acknowledgment, up to 5 characters, null-terminated.
+} aprs_bulletin_t;
+
+/**
+ * @brief Structure for APRS item report.
+ *
+ * This structure holds the item name, live/killed status, position, symbol, and optional comment.
+ */
+typedef struct {
+    char name[10];        ///< Item name, null-terminated, up to 9 characters.
+    bool is_live;         ///< True if the item is live, false if killed.
+    double latitude;      ///< Latitude in decimal degrees (-90 to 90).
+    double longitude;     ///< Longitude in decimal degrees (-180 to 180).
+    char symbol_table;    ///< Symbol table identifier ('/' or '\').
+    char symbol_code;     ///< Symbol code (printable ASCII).
+    char *comment;        ///< Optional comment field, null-terminated.
+} aprs_item_report_t;
+
+/**
+ * @brief Encode an APRS bulletin.
+ *
+ * This function encodes a bulletin into the information field, using the bulletin ID as the addressee.
+ *
+ * @param info Output buffer for the information field.
+ * @param len Size of the output buffer.
+ * @param data Pointer to the bulletin data structure.
+ * @return Number of bytes written to the buffer, or -1 on error.
+ */
+int aprs_encode_bulletin(char *info, size_t len, const aprs_bulletin_t *data);
+
+/**
+ * @brief Encode an APRS item report.
+ *
+ * This function encodes an item report into the information field.
+ *
+ * @param info Output buffer for the information field.
+ * @param len Size of the output buffer.
+ * @param data Pointer to the item report data structure.
+ * @return Number of bytes written to the buffer, or -1 on error.
+ */
+int aprs_encode_item_report(char *info, size_t len, const aprs_item_report_t *data);
+
+/**
+ * @brief Check if a decoded message is a bulletin.
+ *
+ * This function checks if the addressee starts with "BLN" followed by a digit.
+ *
+ * @param msg Pointer to the decoded message structure.
+ * @return True if the message is a bulletin, false otherwise.
+ */
+bool aprs_is_bulletin(const aprs_message_t *msg);
+
+/**
+ * @brief Decode an APRS item report.
+ *
+ * This function decodes an item report from the information field into a structure.
+ *
+ * @param info Input buffer containing the information field.
+ * @param data Pointer to the item report data structure to fill.
+ * @return 0 on success, -1 on error.
+ */
+int aprs_decode_item_report(const char *info, aprs_item_report_t *data);
+
+/**
  * @brief Convert latitude to APRS format.
  *
  * This function converts a latitude value in decimal degrees to the APRS format string (ddmm.mmN/S), with an optional ambiguity level.
