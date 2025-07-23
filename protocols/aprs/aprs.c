@@ -1226,13 +1226,13 @@ int aprs_encode_item_report(char *info, size_t len, const aprs_item_report_t *da
 
     char status_char = data->is_live ? '!' : '=';
     int ret = snprintf(info, len, ")%s%c%s%c%s%c", name_padded, status_char, lat_str, data->symbol_table, lon_str, data->symbol_code);
-    if (ret < 0 || (size_t)ret >= len) {
+    if (ret < 0 || (size_t) ret >= len) {
         return -1;
     }
 
     if (data->comment) {
         int ret2 = snprintf(info + ret, len - ret, "%s", data->comment);
-        if (ret2 < 0 || (size_t)ret2 >= len - ret) {
+        if (ret2 < 0 || (size_t) ret2 >= len - ret) {
             return -1;
         }
         ret += ret2;
@@ -1314,5 +1314,172 @@ int aprs_decode_item_report(const char *info, aprs_item_report_t *data) {
         }
     }
 
+    return 0;
+}
+
+int aprs_encode_raw_gps(char *info, size_t len, const aprs_raw_gps_t *data) {
+    if (data == NULL || data->raw_data == NULL || data->data_len < 3 || strncmp(data->raw_data, "GP", 2) != 0) {
+        return -1;  // Invalid raw GPS data
+    }
+    if (len < data->data_len + 2) {  // +1 for DTI, +1 for null terminator
+        return -1;
+    }
+    info[0] = APRS_DTI_RAW_GPS;   // '$'
+    memcpy(info + 1, data->raw_data, data->data_len);
+    info[data->data_len + 1] = '\0';
+    return data->data_len + 1;
+}
+
+int aprs_encode_test_packet(char *info, size_t len, const aprs_test_packet_t *data) {
+    if (len < data->data_len + 2) {  // +1 for DTI, +1 for null terminator
+        return -1;
+    }
+    info[0] = APRS_DTI_TEST_PACKET;
+    memcpy(info + 1, data->data, data->data_len);
+    info[data->data_len + 1] = '\0';
+    return data->data_len + 1;
+}
+
+int aprs_decode_raw_gps(const char *info, aprs_raw_gps_t *data) {
+    if (info[0] != APRS_DTI_RAW_GPS) {
+        return -1;
+    }
+    size_t total_len = strlen(info);
+    if (total_len <= 1) {
+        return -1;
+    }
+    size_t data_len = total_len - 1;
+    data->raw_data = my_strndup(info + 1, data_len);
+    if (!data->raw_data) {
+        return -1;
+    }
+    data->data_len = data_len;
+    return 0;
+}
+
+int aprs_encode_grid_square(char *info, size_t len, const aprs_grid_square_t *data) {
+    if (data == NULL || len < 1) {
+        return -1;
+    }
+    size_t grid_len = strlen(data->grid_square);
+    if (grid_len != 4 && grid_len != 6) {
+        return -1;  // Invalid grid square length
+    }
+    size_t comment_len = data->comment ? strlen(data->comment) : 0;
+    size_t total_len = 1 + grid_len + 1 + comment_len;  // '>' + grid + ' ' + comment
+    if (len < total_len + 1) {  // +1 for null terminator
+        return -1;
+    }
+    info[0] = '>';  // Use '>' as DTI
+    memcpy(info + 1, data->grid_square, grid_len);
+    size_t pos = 1 + grid_len;
+    info[pos++] = ' ';  // Add space separator
+    if (comment_len > 0) {
+        memcpy(info + pos, data->comment, comment_len);
+        pos += comment_len;
+    }
+    info[pos] = '\0';
+    return total_len;
+}
+
+int aprs_decode_grid_square(const char *info, aprs_grid_square_t *data) {
+    if (info == NULL || info[0] != '>') {
+        return -1;
+    }
+    size_t len = strlen(info);
+    if (len < 6) {  // At least '>' + 4 chars + ' '
+        return -1;
+    }
+    // Find the space separator
+    const char *space_pos = strchr(info + 1, ' ');
+    if (space_pos == NULL) {
+        return -1;  // No space separator found
+    }
+    size_t grid_len = space_pos - (info + 1);
+    if (grid_len != 4 && grid_len != 6) {
+        return -1;  // Invalid grid square length
+    }
+    strncpy(data->grid_square, info + 1, grid_len);
+    data->grid_square[grid_len] = '\0';
+    // Comment starts after the space
+    size_t comment_start = space_pos - info + 1;
+    size_t comment_len = len - comment_start;
+    if (comment_len > 0) {
+        data->comment = malloc(comment_len + 1);
+        if (!data->comment) {
+            return -1;
+        }
+        strncpy(data->comment, info + comment_start, comment_len);
+        data->comment[comment_len] = '\0';
+    } else {
+        data->comment = NULL;
+    }
+    return 0;
+}
+
+int aprs_encode_df_report(char *info, size_t len, const aprs_df_report_t *data) {
+    if (data == NULL || data->bearing < 0 || data->bearing > 359 || data->signal_strength < 0 || data->signal_strength > 9) {
+        return -1;  // Invalid bearing or signal strength
+    }
+    size_t comment_len = data->comment ? strlen(data->comment) : 0;
+    size_t total_len = 1 + 3 + 1 + 3 + comment_len;  // '@' + BRG (3) + '/' + NRQ (3) + comment
+    if (len < total_len + 1) {  // +1 for null terminator
+        return -1;
+    }
+    info[0] = '@';  // Use '@' as DTI for position report
+    snprintf(info + 1, 8, "%03d/%d00", data->bearing, data->signal_strength);  // BRG/NRQ format
+    size_t pos = 8;  // after DTI + BRG + '/' + NRQ
+    if (comment_len > 0) {
+        memcpy(info + pos, data->comment, comment_len);
+        pos += comment_len;
+    }
+    info[pos] = '\0';
+    return total_len;
+}
+
+int aprs_decode_df_report(const char *info, aprs_df_report_t *data) {
+    if (info[0] != '@' || strlen(info) < 8) {  // '@' + 3 digits + '/' + 3 digits
+        return -1;
+    }
+    char bearing_str[4];
+    strncpy(bearing_str, info + 1, 3);
+    bearing_str[3] = '\0';
+    data->bearing = atoi(bearing_str);
+    if (data->bearing < 0 || data->bearing > 359) {
+        return -1;
+    }
+    if (info[4] != '/') {
+        return -1;
+    }
+    char nrq_str[4];
+    strncpy(nrq_str, info + 5, 3);
+    nrq_str[3] = '\0';
+    data->signal_strength = nrq_str[0] - '0';  // Assuming NRQ is "S00" where S is signal strength
+    if (data->signal_strength < 0 || data->signal_strength > 9) {
+        return -1;
+    }
+    size_t len = strlen(info);
+    if (len > 8) {
+        data->comment = malloc(strlen(info + 8) + 1);
+        if (!data->comment) {
+            return -1;
+        }
+        strcpy(data->comment, info + 8);
+    } else {
+        data->comment = NULL;
+    }
+    return 0;
+}
+
+int aprs_decode_test_packet(const char *info, aprs_test_packet_t *data) {
+    if (info[0] != APRS_DTI_TEST_PACKET) {
+        return -1;
+    }
+    size_t len = strlen(info + 1);
+    data->data = my_strndup(info + 1, len);
+    if (!data->data) {
+        return -1;
+    }
+    data->data_len = len;
     return 0;
 }

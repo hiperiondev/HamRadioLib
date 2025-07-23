@@ -26,6 +26,11 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#define APRS_DTI_RAW_GPS '$'
+#define APRS_DTI_GRID_SQUARE '%'
+#define APRS_DTI_DF_REPORT '+'
+#define APRS_DTI_TEST_PACKET ','
+
 /**
  * @brief Structure to represent an AX.25 frame for APRS packets.
  *
@@ -186,6 +191,27 @@ typedef struct {
     char symbol_code;     ///< Symbol code (printable ASCII).
     char *comment;        ///< Optional comment field, null-terminated.
 } aprs_item_report_t;
+
+typedef struct {
+    char *raw_data;       // The raw NMEA sentence or data
+    size_t data_len;      // Length of the raw data
+} aprs_raw_gps_t;
+
+typedef struct {
+    char grid_square[7];  // Grid square code, up to 6 characters + null terminator
+    char *comment;        // Optional comment
+} aprs_grid_square_t;
+
+typedef struct {
+    int bearing;          // Bearing in degrees (0-359)
+    int signal_strength;  // Signal strength (e.g., 0-9)
+    char *comment;        // Optional comment
+} aprs_df_report_t;
+
+typedef struct {
+    char *data;           // The packet data
+    size_t data_len;      // Length of the data
+} aprs_test_packet_t;
 
 /**
  * @brief Encode an APRS bulletin.
@@ -560,5 +586,15 @@ int aprs_encode_station_capabilities(char *info, size_t len, const aprs_station_
  * @return 0 on success, -1 on error.
  */
 int aprs_decode_station_capabilities(const char *info, aprs_station_capabilities_t *data);
+
+int aprs_encode_raw_gps(char *info, size_t len, const aprs_raw_gps_t *data);
+int aprs_encode_grid_square(char *info, size_t len, const aprs_grid_square_t *data);
+int aprs_encode_df_report(char *info, size_t len, const aprs_df_report_t *data);
+int aprs_encode_test_packet(char *info, size_t len, const aprs_test_packet_t *data);
+
+int aprs_decode_raw_gps(const char *info, aprs_raw_gps_t *data);
+int aprs_decode_grid_square(const char *info, aprs_grid_square_t *data);
+int aprs_decode_df_report(const char *info, aprs_df_report_t *data);
+int aprs_decode_test_packet(const char *info, aprs_test_packet_t *data);
 
 #endif /* APRS_H_ */
