@@ -1037,21 +1037,21 @@ int test_aprs_grid_square() {
     }
     // Test 2: 4-character grid square without comment
     {
-            aprs_grid_square_t data = { .grid_square = "JN48", .comment = NULL };
-            char info[256];
-            int ret = aprs_encode_grid_square(info, sizeof(info), &data);
-            TEST_ASSERT(ret > 0, "Encoding failed", err);
-            char expected[256];
-            snprintf(expected, sizeof(expected), ">%s ", data.grid_square); // Note the space after %s
-            TEST_ASSERT(strcmp(info, expected) == 0, "Encoded string incorrect", err);
-            aprs_grid_square_t decoded;
-            ret = aprs_decode_grid_square(info, &decoded);
-            TEST_ASSERT(ret == 0, "Decoding failed", err);
-            TEST_ASSERT(strcmp(decoded.grid_square, "JN48") == 0, "Grid square mismatch", err);
-            TEST_ASSERT(decoded.comment == NULL || decoded.comment[0] == '\0', "Comment should be empty", err);
-            if (decoded.comment)
-                free(decoded.comment);
-        }
+        aprs_grid_square_t data = { .grid_square = "JN48", .comment = NULL };
+        char info[256];
+        int ret = aprs_encode_grid_square(info, sizeof(info), &data);
+        TEST_ASSERT(ret > 0, "Encoding failed", err);
+        char expected[256];
+        snprintf(expected, sizeof(expected), ">%s ", data.grid_square); // Note the space after %s
+        TEST_ASSERT(strcmp(info, expected) == 0, "Encoded string incorrect", err);
+        aprs_grid_square_t decoded;
+        ret = aprs_decode_grid_square(info, &decoded);
+        TEST_ASSERT(ret == 0, "Decoding failed", err);
+        TEST_ASSERT(strcmp(decoded.grid_square, "JN48") == 0, "Grid square mismatch", err);
+        TEST_ASSERT(decoded.comment == NULL || decoded.comment[0] == '\0', "Comment should be empty", err);
+        if (decoded.comment)
+            free(decoded.comment);
+    }
     // Test 3: Invalid grid square length
     {
         aprs_grid_square_t data = { .grid_square = "JN4", .comment = NULL };
@@ -1157,17 +1157,8 @@ uint8_t test_aprs_ax25(void) {
     // Test case for position without timestamp
     {
         // Set up APRS position
-        aprs_position_no_ts_t pos = {
-            .latitude = 49.5,
-            .longitude = -72.75,
-            .symbol_table = '/',
-            .symbol_code = '-',
-            .comment = "Test position",
-            .dti = '!',
-            .has_course_speed = false,
-            .course = 0,
-            .speed = 0
-        };
+        aprs_position_no_ts_t pos = { .latitude = 49.5, .longitude = -72.75, .symbol_table = '/', .symbol_code = '-', .comment = "Test position", .dti = '!',
+                .has_course_speed = false, .course = 0, .speed = 0 };
 
         // Encode APRS packet
         char aprs_info[256];
@@ -1175,47 +1166,28 @@ uint8_t test_aprs_ax25(void) {
         TEST_ASSERT(len > 0, "APRS encoding ok", err);
 
         // Set up AX.25 addresses
-        ax25_address_t dest = {
-            .callsign = "APRS  ",  // Padded with spaces
-            .ssid = 0,
-            .ch = true,   // C-bit for command
-            .extension = false  // Not last address
-        };
-        ax25_address_t src = {
-            .callsign = "TEST  ",  // Padded with spaces
-            .ssid = 0,
-            .ch = false,  // C-bit for command
-            .extension = true  // Last address
-        };
+        ax25_address_t dest = { .callsign = "APRS  ",  // Padded with spaces
+                .ssid = 0, .ch = true,   // C-bit for command
+                .extension = false  // Not last address
+                };
+        ax25_address_t src = { .callsign = "TEST  ",  // Padded with spaces
+                .ssid = 0, .ch = false,  // C-bit for command
+                .extension = true  // Last address
+                };
 
         // Set up header
-        ax25_frame_header_t header = {
-            .destination = dest,
-            .source = src,
-            .repeaters = { .num_repeaters = 0 },
-            .cr = true,
-            .src_cr = false
-        };
+        ax25_frame_header_t header = { .destination = dest, .source = src, .repeaters = { .num_repeaters = 0 }, .cr = true, .src_cr = false };
 
         // Set up UI frame with correct frame type
-        ax25_unnumbered_information_frame_t ui_frame = {
-            .base = {
-                .base = {
-                    .type = AX25_FRAME_UNNUMBERED_INFORMATION,  // Correct frame type
-                    .header = header
-                },
-                .pf = false,
-                .modifier = 0x03  // For UI frame
-            },
-            .pid = 0xF0,  // No layer 3 protocol (standard for APRS)
-            .payload = (uint8_t*)aprs_info,
-            .payload_len = len
-        };
+        ax25_unnumbered_information_frame_t ui_frame = { .base = { .base = { .type = AX25_FRAME_UNNUMBERED_INFORMATION,  // Correct frame type
+                .header = header }, .pf = false, .modifier = 0x03  // For UI frame
+                }, .pid = 0xF0,  // No layer 3 protocol (standard for APRS)
+                .payload = (uint8_t*) aprs_info, .payload_len = len };
 
         // Encode AX.25 frame
         size_t ax25_len;
         uint8_t ax25_err = 0;
-        uint8_t *ax25_frame = ax25_frame_encode((ax25_frame_t*)&ui_frame, &ax25_len, &ax25_err);
+        uint8_t *ax25_frame = ax25_frame_encode((ax25_frame_t*) &ui_frame, &ax25_len, &ax25_err);
         TEST_ASSERT(ax25_frame != NULL && ax25_err == 0, "AX.25 encoding ok", ax25_err);
 
         // Prepare for HDLC encoding
@@ -1239,12 +1211,12 @@ uint8_t test_aprs_ax25(void) {
         TEST_ASSERT(decoded_frame != NULL && decode_err == 0, "AX.25 decoding ok", decode_err);
         TEST_ASSERT(decoded_frame->type == AX25_FRAME_UNNUMBERED_INFORMATION, "Frame type ok ", decode_err);
 
-        ax25_unnumbered_information_frame_t *ui_decoded = (ax25_unnumbered_information_frame_t*)decoded_frame;
+        ax25_unnumbered_information_frame_t *ui_decoded = (ax25_unnumbered_information_frame_t*) decoded_frame;
         TEST_ASSERT(ui_decoded->base.modifier == 0x03, "Modifier OK", decode_err);
         TEST_ASSERT(ui_decoded->pid == 0xF0, "PID ok", decode_err);
 
         // Extract and decode APRS packet
-        char *decoded_aprs_info = (char*)ui_decoded->payload;
+        char *decoded_aprs_info = (char*) ui_decoded->payload;
         aprs_position_no_ts_t decoded_pos;
         ret = aprs_decode_position_no_ts(decoded_aprs_info, &decoded_pos);
         TEST_ASSERT(ret == 0, "APRS decoding ok", err);
@@ -1271,64 +1243,24 @@ uint8_t test_aprs_ax25_true(void) {
 
     // Test Case 1: Position Report without Timestamp
     {
-        aprs_position_no_ts_t original = {
-            .latitude = 37.7749,
-            .longitude = -122.4194,
-            .symbol_table = '/',
-            .symbol_code = '>',
-            .comment = "Test position",
-            .dti = '!',
-            .has_course_speed = true,
-            .course = 180,
-            .speed = 10
-        };
+        aprs_position_no_ts_t original = { .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/', .symbol_code = '>', .comment = "Test position",
+                .dti = '!', .has_course_speed = true, .course = 180, .speed = 10 };
 
         char aprs_info[256];
         int len = aprs_encode_position_no_ts(aprs_info, 256, &original);
         TEST_ASSERT(len > 0, "APRS position encoding ok", err);
 
-        ax25_address_t dest = {
-            .callsign = "APRS  ",
-            .ssid = 0,
-            .ch = true,
-            .res0 = false,
-            .res1 = false,
-            .extension = false
-        };
-        ax25_address_t src = {
-            .callsign = "TEST  ",
-            .ssid = 0,
-            .ch = false,
-            .res0 = false,
-            .res1 = false,
-            .extension = true
-        };
+        ax25_address_t dest = { .callsign = "APRS  ", .ssid = 0, .ch = true, .res0 = false, .res1 = false, .extension = false };
+        ax25_address_t src = { .callsign = "TEST  ", .ssid = 0, .ch = false, .res0 = false, .res1 = false, .extension = true };
 
-        ax25_frame_header_t header = {
-            .destination = dest,
-            .source = src,
-            .repeaters = { .num_repeaters = 0 },
-            .cr = true,
-            .src_cr = false
-        };
+        ax25_frame_header_t header = { .destination = dest, .source = src, .repeaters = { .num_repeaters = 0 }, .cr = true, .src_cr = false };
 
-        ax25_unnumbered_information_frame_t ui_frame = {
-            .base = {
-                .base = {
-                    .type = AX25_FRAME_UNNUMBERED_INFORMATION,
-                    .header = header
-                },
-                .pf = false,
-                .modifier = 0x03
-            },
-            .pid = 0xF0,
-            .payload = (uint8_t*)aprs_info,
-            .payload_len = len
-        };
+        ax25_unnumbered_information_frame_t ui_frame = { .base = { .base = { .type = AX25_FRAME_UNNUMBERED_INFORMATION, .header = header }, .pf = false,
+                .modifier = 0x03 }, .pid = 0xF0, .payload = (uint8_t*) aprs_info, .payload_len = len };
 
         size_t ax25_len;
         uint8_t ax25_err = 0;
-        uint8_t *ax25_frame = ax25_frame_encode((ax25_frame_t*)&ui_frame, &ax25_len, &ax25_err);
+        uint8_t *ax25_frame = ax25_frame_encode((ax25_frame_t*) &ui_frame, &ax25_len, &ax25_err);
         TEST_ASSERT(ax25_frame != NULL && ax25_err == 0, "AX.25 encoding ok", ax25_err);
 
         unsigned char hdlc_frame[512];
@@ -1346,8 +1278,8 @@ uint8_t test_aprs_ax25_true(void) {
         TEST_ASSERT(decoded_frame != NULL && decode_err == 0, "AX.25 decoding ok", decode_err);
         TEST_ASSERT(decoded_frame->type == AX25_FRAME_UNNUMBERED_INFORMATION, "Frame type ok", decode_err);
 
-        ax25_unnumbered_information_frame_t *ui_decoded = (ax25_unnumbered_information_frame_t*)decoded_frame;
-        char *decoded_aprs_info = (char*)ui_decoded->payload;
+        ax25_unnumbered_information_frame_t *ui_decoded = (ax25_unnumbered_information_frame_t*) decoded_frame;
+        char *decoded_aprs_info = (char*) ui_decoded->payload;
 
         aprs_position_no_ts_t decoded;
         ret = aprs_decode_position_no_ts(decoded_aprs_info, &decoded);
@@ -1365,63 +1297,28 @@ uint8_t test_aprs_ax25_true(void) {
 
         free(decoded.comment);
         ax25_frame_free(decoded_frame, &decode_err);
-        aprs_frame_print((unsigned char*)aprs_info, len);
+        aprs_frame_print((unsigned char*) aprs_info, len);
     }
 
     // Test Case 2: Message
     {
-        aprs_message_t original = {
-            .addressee = "NOCALL   ",
-            .message = "Hello, world!",
-            .message_number = "001"
-        };
+        aprs_message_t original = { .addressee = "NOCALL   ", .message = "Hello, world!", .message_number = "001" };
 
         char aprs_info[256];
         int len = aprs_encode_message(aprs_info, 256, &original);
         TEST_ASSERT(len > 0, "APRS message encoding ok", err);
 
-        ax25_address_t dest = {
-            .callsign = "APRS  ",
-            .ssid = 0,
-            .ch = true,
-            .res0 = false,
-            .res1 = false,
-            .extension = false
-        };
-        ax25_address_t src = {
-            .callsign = "TEST  ",
-            .ssid = 0,
-            .ch = false,
-            .res0 = false,
-            .res1 = false,
-            .extension = true
-        };
+        ax25_address_t dest = { .callsign = "APRS  ", .ssid = 0, .ch = true, .res0 = false, .res1 = false, .extension = false };
+        ax25_address_t src = { .callsign = "TEST  ", .ssid = 0, .ch = false, .res0 = false, .res1 = false, .extension = true };
 
-        ax25_frame_header_t header = {
-            .destination = dest,
-            .source = src,
-            .repeaters = { .num_repeaters = 0 },
-            .cr = true,
-            .src_cr = false
-        };
+        ax25_frame_header_t header = { .destination = dest, .source = src, .repeaters = { .num_repeaters = 0 }, .cr = true, .src_cr = false };
 
-        ax25_unnumbered_information_frame_t ui_frame = {
-            .base = {
-                .base = {
-                    .type = AX25_FRAME_UNNUMBERED_INFORMATION,
-                    .header = header
-                },
-                .pf = false,
-                .modifier = 0x03
-            },
-            .pid = 0xF0,
-            .payload = (uint8_t*)aprs_info,
-            .payload_len = len
-        };
+        ax25_unnumbered_information_frame_t ui_frame = { .base = { .base = { .type = AX25_FRAME_UNNUMBERED_INFORMATION, .header = header }, .pf = false,
+                .modifier = 0x03 }, .pid = 0xF0, .payload = (uint8_t*) aprs_info, .payload_len = len };
 
         size_t ax25_len;
         uint8_t ax25_err = 0;
-        uint8_t *ax25_frame = ax25_frame_encode((ax25_frame_t*)&ui_frame, &ax25_len, &ax25_err);
+        uint8_t *ax25_frame = ax25_frame_encode((ax25_frame_t*) &ui_frame, &ax25_len, &ax25_err);
         TEST_ASSERT(ax25_frame != NULL && ax25_err == 0, "AX.25 encoding ok", ax25_err);
 
         unsigned char hdlc_frame[512];
@@ -1439,8 +1336,8 @@ uint8_t test_aprs_ax25_true(void) {
         TEST_ASSERT(decoded_frame != NULL && decode_err == 0, "AX.25 decoding ok", decode_err);
         TEST_ASSERT(decoded_frame->type == AX25_FRAME_UNNUMBERED_INFORMATION, "Frame type ok", decode_err);
 
-        ax25_unnumbered_information_frame_t *ui_decoded = (ax25_unnumbered_information_frame_t*)decoded_frame;
-        char *decoded_aprs_info = (char*)ui_decoded->payload;
+        ax25_unnumbered_information_frame_t *ui_decoded = (ax25_unnumbered_information_frame_t*) decoded_frame;
+        char *decoded_aprs_info = (char*) ui_decoded->payload;
 
         aprs_message_t decoded;
         ret = aprs_decode_message(decoded_aprs_info, &decoded);
@@ -1453,64 +1350,28 @@ uint8_t test_aprs_ax25_true(void) {
         free(decoded.message);
         free(decoded.message_number);
         ax25_frame_free(decoded_frame, &decode_err);
-        aprs_frame_print((unsigned char*)aprs_info, len);
+        aprs_frame_print((unsigned char*) aprs_info, len);
     }
 
     // Test Case 3: Weather Report
     {
-        aprs_weather_report_t original = {
-            .timestamp = "07230507",
-            .temperature = 75.0,
-            .wind_speed = 10,
-            .wind_direction = 180
-        };
+        aprs_weather_report_t original = { .timestamp = "07230507", .temperature = 75.0, .wind_speed = 10, .wind_direction = 180 };
 
         char aprs_info[256];
         int len = aprs_encode_weather_report(aprs_info, 256, &original);
         TEST_ASSERT(len > 0, "APRS weather encoding ok", err);
 
-        ax25_address_t dest = {
-            .callsign = "APRS  ",
-            .ssid = 0,
-            .ch = true,
-            .res0 = false,
-            .res1 = false,
-            .extension = false
-        };
-        ax25_address_t src = {
-            .callsign = "TEST  ",
-            .ssid = 0,
-            .ch = false,
-            .res0 = false,
-            .res1 = false,
-            .extension = true
-        };
+        ax25_address_t dest = { .callsign = "APRS  ", .ssid = 0, .ch = true, .res0 = false, .res1 = false, .extension = false };
+        ax25_address_t src = { .callsign = "TEST  ", .ssid = 0, .ch = false, .res0 = false, .res1 = false, .extension = true };
 
-        ax25_frame_header_t header = {
-            .destination = dest,
-            .source = src,
-            .repeaters = { .num_repeaters = 0 },
-            .cr = true,
-            .src_cr = false
-        };
+        ax25_frame_header_t header = { .destination = dest, .source = src, .repeaters = { .num_repeaters = 0 }, .cr = true, .src_cr = false };
 
-        ax25_unnumbered_information_frame_t ui_frame = {
-            .base = {
-                .base = {
-                    .type = AX25_FRAME_UNNUMBERED_INFORMATION,
-                    .header = header
-                },
-                .pf = false,
-                .modifier = 0x03
-            },
-            .pid = 0xF0,
-            .payload = (uint8_t*)aprs_info,
-            .payload_len = len
-        };
+        ax25_unnumbered_information_frame_t ui_frame = { .base = { .base = { .type = AX25_FRAME_UNNUMBERED_INFORMATION, .header = header }, .pf = false,
+                .modifier = 0x03 }, .pid = 0xF0, .payload = (uint8_t*) aprs_info, .payload_len = len };
 
         size_t ax25_len;
         uint8_t ax25_err = 0;
-        uint8_t *ax25_frame = ax25_frame_encode((ax25_frame_t*)&ui_frame, &ax25_len, &ax25_err);
+        uint8_t *ax25_frame = ax25_frame_encode((ax25_frame_t*) &ui_frame, &ax25_len, &ax25_err);
         TEST_ASSERT(ax25_frame != NULL && ax25_err == 0, "AX.25 encoding ok", ax25_err);
 
         unsigned char hdlc_frame[512];
@@ -1528,8 +1389,8 @@ uint8_t test_aprs_ax25_true(void) {
         TEST_ASSERT(decoded_frame != NULL && decode_err == 0, "AX.25 decoding ok", decode_err);
         TEST_ASSERT(decoded_frame->type == AX25_FRAME_UNNUMBERED_INFORMATION, "Frame type ok", decode_err);
 
-        ax25_unnumbered_information_frame_t *ui_decoded = (ax25_unnumbered_information_frame_t*)decoded_frame;
-        char *decoded_aprs_info = (char*)ui_decoded->payload;
+        ax25_unnumbered_information_frame_t *ui_decoded = (ax25_unnumbered_information_frame_t*) decoded_frame;
+        char *decoded_aprs_info = (char*) ui_decoded->payload;
 
         aprs_weather_report_t decoded;
         ret = aprs_decode_weather_report(decoded_aprs_info, &decoded);
@@ -1541,66 +1402,29 @@ uint8_t test_aprs_ax25_true(void) {
         TEST_ASSERT(decoded.wind_direction == original.wind_direction, "Wind direction ok", err);
 
         ax25_frame_free(decoded_frame, &decode_err);
-        aprs_frame_print((unsigned char*)aprs_info, len);
+        aprs_frame_print((unsigned char*) aprs_info, len);
     }
 
     // Test Case 4: Object Report
     {
-        aprs_object_report_t original = {
-            .name = "TESTOBJ  ",
-            .timestamp = "111111z",
-            .latitude = 37.7749,
-            .longitude = -122.4194,
-            .symbol_table = '/',
-            .symbol_code = '>'
-        };
+        aprs_object_report_t original = { .name = "TESTOBJ  ", .timestamp = "111111z", .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/',
+                .symbol_code = '>' };
 
         char aprs_info[256];
         int len = aprs_encode_object_report(aprs_info, 256, &original);
         TEST_ASSERT(len > 0, "APRS object encoding ok", err);
 
-        ax25_address_t dest = {
-            .callsign = "APRS  ",
-            .ssid = 0,
-            .ch = true,
-            .res0 = false,
-            .res1 = false,
-            .extension = false
-        };
-        ax25_address_t src = {
-            .callsign = "TEST  ",
-            .ssid = 0,
-            .ch = false,
-            .res0 = false,
-            .res1 = false,
-            .extension = true
-        };
+        ax25_address_t dest = { .callsign = "APRS  ", .ssid = 0, .ch = true, .res0 = false, .res1 = false, .extension = false };
+        ax25_address_t src = { .callsign = "TEST  ", .ssid = 0, .ch = false, .res0 = false, .res1 = false, .extension = true };
 
-        ax25_frame_header_t header = {
-            .destination = dest,
-            .source = src,
-            .repeaters = { .num_repeaters = 0 },
-            .cr = true,
-            .src_cr = false
-        };
+        ax25_frame_header_t header = { .destination = dest, .source = src, .repeaters = { .num_repeaters = 0 }, .cr = true, .src_cr = false };
 
-        ax25_unnumbered_information_frame_t ui_frame = {
-            .base = {
-                .base = {
-                    .type = AX25_FRAME_UNNUMBERED_INFORMATION,
-                    .header = header
-                },
-                .pf = false,
-                .modifier = 0x03
-            },
-            .pid = 0xF0,
-            .payload = (uint8_t*)aprs_info,
-            .payload_len = len
-        };
+        ax25_unnumbered_information_frame_t ui_frame = { .base = { .base = { .type = AX25_FRAME_UNNUMBERED_INFORMATION, .header = header }, .pf = false,
+                .modifier = 0x03 }, .pid = 0xF0, .payload = (uint8_t*) aprs_info, .payload_len = len };
 
         size_t ax25_len;
         uint8_t ax25_err = 0;
-        uint8_t *ax25_frame = ax25_frame_encode((ax25_frame_t*)&ui_frame, &ax25_len, &ax25_err);
+        uint8_t *ax25_frame = ax25_frame_encode((ax25_frame_t*) &ui_frame, &ax25_len, &ax25_err);
         TEST_ASSERT(ax25_frame != NULL && ax25_err == 0, "AX.25 encoding ok", ax25_err);
 
         unsigned char hdlc_frame[512];
@@ -1618,8 +1442,8 @@ uint8_t test_aprs_ax25_true(void) {
         TEST_ASSERT(decoded_frame != NULL && decode_err == 0, "AX.25 decoding ok", decode_err);
         TEST_ASSERT(decoded_frame->type == AX25_FRAME_UNNUMBERED_INFORMATION, "Frame type ok", decode_err);
 
-        ax25_unnumbered_information_frame_t *ui_decoded = (ax25_unnumbered_information_frame_t*)decoded_frame;
-        char *decoded_aprs_info = (char*)ui_decoded->payload;
+        ax25_unnumbered_information_frame_t *ui_decoded = (ax25_unnumbered_information_frame_t*) decoded_frame;
+        char *decoded_aprs_info = (char*) ui_decoded->payload;
 
         aprs_object_report_t decoded;
         ret = aprs_decode_object_report(decoded_aprs_info, &decoded);
@@ -1637,20 +1461,13 @@ uint8_t test_aprs_ax25_true(void) {
         TEST_ASSERT(decoded.symbol_code == original.symbol_code, "Symbol code ok", err);
 
         ax25_frame_free(decoded_frame, &decode_err);
-        aprs_frame_print((unsigned char*)aprs_info, len);
+        aprs_frame_print((unsigned char*) aprs_info, len);
     }
 
     // Test Case 5: Mic-E Compressed Position Report
     {
-        aprs_mice_t original = {
-            .latitude = 33.426667,
-            .longitude = -112.129,
-            .speed = 20,
-            .course = 251,
-            .symbol_table = '/',
-            .symbol_code = '[',
-            .message_code = "M3"
-        };
+        aprs_mice_t original = { .latitude = 33.426667, .longitude = -112.129, .speed = 20, .course = 251, .symbol_table = '/', .symbol_code = '[',
+                .message_code = "M3" };
 
         char dest_str[7];
         int ret_dest = aprs_encode_mice_destination(dest_str, &original);
@@ -1660,48 +1477,18 @@ uint8_t test_aprs_ax25_true(void) {
         int len = aprs_encode_mice_info(aprs_info, 256, &original);
         TEST_ASSERT(len > 0, "Mic-E info encoding ok", err);
 
-        ax25_address_t dest = {
-            .callsign = {dest_str[0], dest_str[1], dest_str[2], dest_str[3], dest_str[4], dest_str[5], ' '},
-            .ssid = 0,
-            .ch = true,
-            .res0 = false,
-            .res1 = false,
-            .extension = false
-        };
-        ax25_address_t src = {
-            .callsign = "TEST  ",
-            .ssid = 0,
-            .ch = false,
-            .res0 = false,
-            .res1 = false,
-            .extension = true
-        };
+        ax25_address_t dest = { .callsign = { dest_str[0], dest_str[1], dest_str[2], dest_str[3], dest_str[4], dest_str[5], ' ' }, .ssid = 0, .ch = true,
+                .res0 = false, .res1 = false, .extension = false };
+        ax25_address_t src = { .callsign = "TEST  ", .ssid = 0, .ch = false, .res0 = false, .res1 = false, .extension = true };
 
-        ax25_frame_header_t header = {
-            .destination = dest,
-            .source = src,
-            .repeaters = { .num_repeaters = 0 },
-            .cr = true,
-            .src_cr = false
-        };
+        ax25_frame_header_t header = { .destination = dest, .source = src, .repeaters = { .num_repeaters = 0 }, .cr = true, .src_cr = false };
 
-        ax25_unnumbered_information_frame_t ui_frame = {
-            .base = {
-                .base = {
-                    .type = AX25_FRAME_UNNUMBERED_INFORMATION,
-                    .header = header
-                },
-                .pf = false,
-                .modifier = 0x03
-            },
-            .pid = 0xF0,
-            .payload = (uint8_t*)aprs_info,
-            .payload_len = len
-        };
+        ax25_unnumbered_information_frame_t ui_frame = { .base = { .base = { .type = AX25_FRAME_UNNUMBERED_INFORMATION, .header = header }, .pf = false,
+                .modifier = 0x03 }, .pid = 0xF0, .payload = (uint8_t*) aprs_info, .payload_len = len };
 
         size_t ax25_len;
         uint8_t ax25_err = 0;
-        uint8_t *ax25_frame = ax25_frame_encode((ax25_frame_t*)&ui_frame, &ax25_len, &ax25_err);
+        uint8_t *ax25_frame = ax25_frame_encode((ax25_frame_t*) &ui_frame, &ax25_len, &ax25_err);
         TEST_ASSERT(ax25_frame != NULL && ax25_err == 0, "AX.25 encoding ok", ax25_err);
 
         unsigned char hdlc_frame[512];
@@ -1719,8 +1506,8 @@ uint8_t test_aprs_ax25_true(void) {
         TEST_ASSERT(decoded_frame != NULL && decode_err == 0, "AX.25 decoding ok", decode_err);
         TEST_ASSERT(decoded_frame->type == AX25_FRAME_UNNUMBERED_INFORMATION, "Frame type ok", decode_err);
 
-        ax25_unnumbered_information_frame_t *ui_decoded = (ax25_unnumbered_information_frame_t*)decoded_frame;
-        char *decoded_aprs_info = (char*)ui_decoded->payload;
+        ax25_unnumbered_information_frame_t *ui_decoded = (ax25_unnumbered_information_frame_t*) decoded_frame;
+        char *decoded_aprs_info = (char*) ui_decoded->payload;
 
         aprs_mice_t decoded;
         int message_bits;
@@ -1742,7 +1529,7 @@ uint8_t test_aprs_ax25_true(void) {
         TEST_ASSERT(strcmp(decoded.message_code, original.message_code) == 0, "Message code ok", err);
 
         ax25_frame_free(decoded_frame, &decode_err);
-        aprs_frame_print((unsigned char*)aprs_info, len);
+        aprs_frame_print((unsigned char*) aprs_info, len);
     }
 
     return err;
