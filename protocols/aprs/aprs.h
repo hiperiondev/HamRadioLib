@@ -76,10 +76,23 @@ typedef struct {
  * Units follow APRS protocol conventions: temperature in Fahrenheit, wind speed in mph.
  */
 typedef struct {
-    char timestamp[9];    ///< Timestamp in MMDDHHMM format (e.g., "12010000").
-    float temperature;    ///< Temperature in degrees Fahrenheit.
-    int wind_speed;       ///< Wind speed in miles per hour.
-    int wind_direction;   ///< Wind direction in degrees (0-360).
+    char timestamp[9];                  // MMDDHHMM
+    float temperature;                  // degrees F, -999.9 if not present
+    int wind_speed;                     // mph, -1 if not present
+    int wind_direction;                 // degrees, -1 if not present
+    int wind_gust;                      // mph, -1 if not present
+    int rainfall_24h;                   // hundredths of an inch, -1 if not present
+    int rainfall_since_midnight;        // hundredths of an inch, -1 if not present
+    int barometric_pressure;            // tenths of a millibar, -1 if not present
+    int humidity;                       // percent, -1 if not present
+    int luminosity;                     // watts per square meter, -1 if not present
+    float snowfall_24h;                 // inches, -999.9 if not present
+    int rain_rate;                      // hundredths of an inch per hour, -1 if not present
+    float water_height_feet;            // feet, -999.9 if not present
+    float water_height_meters;          // meters, -999.9 if not present
+    float indoors_temperature;          // degrees F, -999.9 if not present
+    int indoors_humidity;               // percent, -1 if not present
+    int raw_rain_counter;               // raw rain counter, -1 if not present
 } aprs_weather_report_t;
 
 /**

@@ -263,9 +263,12 @@ int test_aprs_weather_object_position() {
     printf("test_aprs_weather_object_position\n");
     uint8_t err = 0;
 
-    // Test 1: Weather report encoding and decoding
+    // Test: Weather report encoding and decoding
     {
-        aprs_weather_report_t weather = { .timestamp = "12010000", .temperature = 25.0, .wind_speed = 10, .wind_direction = 180 };
+        aprs_weather_report_t weather = { .timestamp = "12010000", .temperature = 25.0, .wind_speed = 10, .wind_direction = 180, .wind_gust = -1,
+                .rainfall_24h = -1, .rainfall_since_midnight = -1, .barometric_pressure = -1, .humidity = -1, .luminosity = -1, .snowfall_24h = -999.9,
+                .rain_rate = -1, .water_height_feet = -999.9, .water_height_meters = -999.9, .indoors_temperature = -999.9, .indoors_humidity = -1,
+                .raw_rain_counter = -1 };
         char info[100];
         int len = aprs_encode_weather_report(info, 100, &weather);
         TEST_ASSERT(len == 21, "Weather report encoding length incorrect", err);

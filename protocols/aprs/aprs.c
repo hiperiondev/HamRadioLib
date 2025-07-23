@@ -513,83 +513,256 @@ int aprs_decode_message(const char *info, aprs_message_t *data) {
 }
 
 int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report_t *data) {
-    // Validate inputs
-    if (strlen(data->timestamp) != 8) {
-        return -1;
-    }
-    if (data->wind_direction < 0 || data->wind_direction > 360 || data->wind_speed < 0) {
-        return -1;
-    }
-    // Explicitly cast to int to avoid floating-point issues
-    int temp = (int) (data->temperature + 0.5); // Round 25.0 to 25
-    if (temp < -99 || temp > 999) { // APRS temperature range constraint
-        return -1;
-    }
+    int written = 0;
 
-    // Format temperature: "tDDD" for positive, "t-DD" for negative
-    char temp_str[5];
-    if (temp >= 0) {
-        snprintf(temp_str, sizeof(temp_str), "t%03d", temp); // e.g., "t025"
-    } else {
-        snprintf(temp_str, sizeof(temp_str), "t-%02d", -temp); // e.g., "t-05"
+    // Ensure buffer is initialized
+    if (!info || len == 0)
+        return 0;
+
+    // Add underscore and timestamp
+    written += snprintf(info + written, len - written, "_%s", data->timestamp);
+
+    // Wind Direction
+    if (data->wind_direction >= 0 && data->wind_direction <= 360) {
+        written += snprintf(info + written, len - written, "c%03d", data->wind_direction);
     }
 
-    // Encode weather report without spaces
-    int ret = snprintf(info, len, "_%sc%03ds%03d%s", data->timestamp, data->wind_direction, data->wind_speed, temp_str);
-
-    // Check for encoding errors or buffer overflow
-    if (ret < 0 || (size_t) ret >= len) {
-        return -1;
+    // Wind Speed
+    if (data->wind_speed >= 0) {
+        written += snprintf(info + written, len - written, "s%03d", data->wind_speed);
     }
 
-    return ret;
-}
-
-int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
-    size_t info_len = strlen(info);
-    if (info[0] != '_' || info_len < 9) {
-        return -1;
-    }
-
-    // Extract timestamp (positions 1-8)
-    strncpy(data->timestamp, info + 1, 8);
-    data->timestamp[8] = '\0';
-
-    // Parse weather data
-    const char *p = info + 9;
-    data->wind_direction = -1;
-    data->wind_speed = -1;
-    data->temperature = NAN;
-
-    while (*p) {
-        if (*p == 'c') {
-            char dir_str[4];
-            strncpy(dir_str, p + 1, 3);
-            dir_str[3] = '\0';
-            data->wind_direction = atoi(dir_str);
-            p += 4;
-        } else if (*p == 's') {
-            char speed_str[4];
-            strncpy(speed_str, p + 1, 3);
-            speed_str[3] = '\0';
-            data->wind_speed = atoi(speed_str);
-            p += 4;
-        } else if (*p == 't') {
-            char temp_str[4];
-            strncpy(temp_str, p + 1, 3);
-            temp_str[3] = '\0';
-            data->temperature = atof(temp_str);
-            p += 4;
+    // Temperature
+    if (data->temperature >= -99.9 && data->temperature <= 999.9) {
+        int temp_int = (int) round(data->temperature);
+        if (temp_int >= 0) {
+            written += snprintf(info + written, len - written, "t%03d", temp_int);
         } else {
-            p++;
+            written += snprintf(info + written, len - written, "t-%02d", -temp_int);
         }
     }
 
-    // Check if required fields are set
-    if (data->wind_direction == -1 || data->wind_speed == -1 || isnan(data->temperature)) {
-        return -1;
+    // Other fields (skipped if invalid to match test expectations)
+    if (data->wind_gust >= 0) {
+        written += snprintf(info + written, len - written, "g%03d", data->wind_gust);
+    }
+    if (data->rainfall_24h >= 0) {
+        written += snprintf(info + written, len - written, "p%03d", data->rainfall_24h);
+    }
+    if (data->rainfall_since_midnight >= 0) {
+        written += snprintf(info + written, len - written, "P%03d", data->rainfall_since_midnight);
+    }
+    if (data->humidity >= 0 && data->humidity <= 100) {
+        written += snprintf(info + written, len - written, "h%02d", data->humidity);
+    }
+    if (data->barometric_pressure >= 0) {
+        written += snprintf(info + written, len - written, "b%05d", data->barometric_pressure);
+    }
+    if (data->luminosity >= 0) {
+        if (data->luminosity < 1000) {
+            written += snprintf(info + written, len - written, "L%03d", data->luminosity);
+        } else {
+            written += snprintf(info + written, len - written, "l%03d", data->luminosity - 1000);
+        }
+    }
+    if (data->snowfall_24h >= 0.0) {
+        int snow_int = (int) round(data->snowfall_24h);
+        written += snprintf(info + written, len - written, "S%03d", snow_int);
+    }
+    if (data->rain_rate >= 0) {
+        written += snprintf(info + written, len - written, "R%03d", data->rain_rate);
+    }
+    if (data->water_height_feet >= 0.0) {
+        written += snprintf(info + written, len - written, "F%.1f", data->water_height_feet);
+    }
+    if (data->water_height_meters >= 0.0) {
+        written += snprintf(info + written, len - written, "f%.1f", data->water_height_meters);
+    }
+    if (data->indoors_temperature >= -99.9 && data->indoors_temperature <= 999.9) {
+        int temp_int = (int) round(data->indoors_temperature);
+        if (temp_int >= 0) {
+            written += snprintf(info + written, len - written, "i%02d", temp_int);
+        } else {
+            written += snprintf(info + written, len - written, "i-%02d", -temp_int);
+        }
+    }
+    if (data->indoors_humidity >= 0 && data->indoors_humidity <= 100) {
+        written += snprintf(info + written, len - written, "I%02d", data->indoors_humidity);
+    }
+    if (data->raw_rain_counter >= 0) {
+        written += snprintf(info + written, len - written, "#%05d", data->raw_rain_counter);
     }
 
+    return written;
+}
+
+int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
+    // Initialize all fields to absence values
+    memset(data, 0, sizeof(*data));
+    data->temperature = -999.9;
+    data->wind_speed = -1;
+    data->wind_direction = -1;
+    data->wind_gust = -1;
+    data->rainfall_24h = -1;
+    data->rainfall_since_midnight = -1;
+    data->barometric_pressure = -1;
+    data->humidity = -1;
+    data->luminosity = -1;
+    data->snowfall_24h = -999.9;
+    data->rain_rate = -1;
+    data->water_height_feet = -999.9;
+    data->water_height_meters = -999.9;
+    data->indoors_temperature = -999.9;
+    data->indoors_humidity = -1;
+    data->raw_rain_counter = -1;
+
+    const char *p = info;
+
+    // Check for positionless weather report starting with '_'
+    if (*p == '_') {
+        p++;
+        // Extract timestamp (8 characters: MMDDHHMM)
+        if (strlen(p) >= 8) {
+            strncpy(data->timestamp, p, 8);
+            data->timestamp[8] = '\0'; // Ensure null-termination
+            p += 8;
+        } else {
+            return -1; // Invalid timestamp
+        }
+    } else {
+        return -1; // Not a positionless weather report
+    }
+
+    // Parse weather fields
+    while (*p) {
+        if (*p == 't') {
+            p++;
+            if (*p == '-') {
+                p++;
+                char buf[3];
+                strncpy(buf, p, 2);
+                buf[2] = '\0';
+                p += 2;
+                data->temperature = -atof(buf);
+            } else {
+                char buf[4];
+                strncpy(buf, p, 3);
+                buf[3] = '\0';
+                p += 3;
+                data->temperature = atof(buf);
+            }
+        } else if (*p == 's') {
+            p++;
+            char buf[4];
+            strncpy(buf, p, 3);
+            buf[3] = '\0';
+            p += 3;
+            data->wind_speed = atoi(buf);
+        } else if (*p == 'g') {
+            p++;
+            char buf[4];
+            strncpy(buf, p, 3);
+            buf[3] = '\0';
+            p += 3;
+            data->wind_gust = atoi(buf);
+        } else if (*p == 'c') {
+            p++;
+            char buf[4];
+            strncpy(buf, p, 3);
+            buf[3] = '\0';
+            p += 3;
+            data->wind_direction = atoi(buf);
+        } else if (*p == 'p') {
+            p++;
+            char buf[4];
+            strncpy(buf, p, 3);
+            buf[3] = '\0';
+            p += 3;
+            data->rainfall_24h = atoi(buf);
+        } else if (*p == 'P') {
+            p++;
+            char buf[4];
+            strncpy(buf, p, 3);
+            buf[3] = '\0';
+            p += 3;
+            data->rainfall_since_midnight = atoi(buf);
+        } else if (*p == 'b') {
+            p++;
+            char buf[6];
+            strncpy(buf, p, 5);
+            buf[5] = '\0';
+            p += 5;
+            data->barometric_pressure = atoi(buf);
+        } else if (*p == 'h') {
+            p++;
+            char buf[3];
+            strncpy(buf, p, 2);
+            buf[2] = '\0';
+            p += 2;
+            data->humidity = atoi(buf);
+        } else if (*p == 'L' || *p == 'l') {
+            p++;
+            char buf[5];
+            strncpy(buf, p, 4);
+            buf[4] = '\0';
+            p += 4;
+            data->luminosity = atoi(buf);
+        } else if (*p == 'S') {
+            p++;
+            char buf[4];
+            strncpy(buf, p, 3);
+            buf[3] = '\0';
+            p += 3;
+            data->snowfall_24h = atof(buf);
+        } else if (*p == 'R') {
+            p++;
+            char buf[4];
+            strncpy(buf, p, 3);
+            buf[3] = '\0';
+            p += 3;
+            data->rain_rate = atoi(buf);
+        } else if (*p == 'F') {
+            p++;
+            char *end;
+            data->water_height_feet = strtof(p, &end);
+            p = end;
+        } else if (*p == 'f') {
+            p++;
+            char *end;
+            data->water_height_meters = strtof(p, &end);
+            p = end;
+        } else if (*p == 'i') {
+            p++;
+            if (*p == '-') {
+                p++;
+                char *end;
+                data->indoors_temperature = -strtof(p, &end);
+                p = end;
+            } else {
+                char *end;
+                data->indoors_temperature = strtof(p, &end);
+                p = end;
+            }
+        } else if (*p == 'I') {
+            p++;
+            char buf[3];
+            strncpy(buf, p, 2);
+            buf[2] = '\0';
+            p += 2;
+            data->indoors_humidity = atoi(buf);
+        } else if (*p == '#') {
+            p++;
+            char buf[6];
+            strncpy(buf, p, 5);
+            buf[5] = '\0';
+            p += 5;
+            data->raw_rain_counter = atoi(buf);
+        } else {
+            p++;
+        }
+        while (*p && !isalpha(*p))
+            p++;
+    }
     return 0;
 }
 
