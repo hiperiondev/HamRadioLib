@@ -113,11 +113,11 @@ int test_aprs_position_encoding_decoding() {
 
     // Test 7: Position with ambiguity level 3
     {
-        aprs_position_no_ts_t pos = { .latitude = 49.5, .longitude = -72.75, .symbol_table = '/', .symbol_code = '-', .comment = "AMB3" };
+        aprs_position_no_ts_t pos = { .latitude = 49.5, .longitude = -72.75, .symbol_table = '/', .symbol_code = '-', .comment = "AMB3", .ambiguity = 3 };
         char info[100];
         int len = aprs_encode_position_no_ts(info, 100, &pos);
-        TEST_ASSERT(len == 20, "Position encoding length with ambiguity incorrect", err);
-        TEST_ASSERT(strcmp(info, "!493 .  N/0724 .  W-") == 0, "Encoded position with ambiguity incorrect", err);
+        TEST_ASSERT(len == 24, "Position encoding length with ambiguity incorrect", err);
+        TEST_ASSERT(strcmp(info, "!493 .  N/0724 .  W-AMB3") == 0, "Encoded position with ambiguity incorrect", err);
         aprs_position_no_ts_t decoded;
         int ret = aprs_decode_position_no_ts(info, &decoded);
         TEST_ASSERT(ret == 0, "Position decoding with ambiguity failed", err);
@@ -132,11 +132,11 @@ int test_aprs_position_encoding_decoding() {
     // Test 8: Position with ambiguity level 4 and course/speed
     {
         aprs_position_no_ts_t pos = { .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/', .symbol_code = '>', .comment = "AMB4",
-                .has_course_speed = true, .course = 180, .speed = 10 };
+                .has_course_speed = true, .course = 180, .speed = 10, .ambiguity = 4 };
         char info[100];
         int len = aprs_encode_position_no_ts(info, 100, &pos);
-        TEST_ASSERT(len == 27, "Position encoding length with ambiguity and course/speed incorrect", err);
-        TEST_ASSERT(strcmp(info, "!37  .  N/122  .  W>180/010") == 0, "Encoded position with ambiguity and course/speed incorrect", err);
+        TEST_ASSERT(len == 31, "Position encoding length with ambiguity and course/speed incorrect", err);
+        TEST_ASSERT(strcmp(info, "!37  .  N/122  .  W>180/010AMB4") == 0, "Encoded position with ambiguity and course/speed incorrect", err);
         aprs_position_no_ts_t decoded;
         int ret = aprs_decode_position_no_ts(info, &decoded);
         TEST_ASSERT(ret == 0, "Position decoding with ambiguity and course/speed failed", err);
@@ -265,10 +265,27 @@ int test_aprs_weather_object_position() {
 
     // Test: Weather report encoding and decoding
     {
-        aprs_weather_report_t weather = { .timestamp = "12010000", .temperature = 25.0, .wind_speed = 10, .wind_direction = 180, .wind_gust = -1,
-                .rainfall_24h = -1, .rainfall_since_midnight = -1, .barometric_pressure = -1, .humidity = -1, .luminosity = -1, .snowfall_24h = -999.9,
-                .rain_rate = -1, .water_height_feet = -999.9, .water_height_meters = -999.9, .indoors_temperature = -999.9, .indoors_humidity = -1,
-                .raw_rain_counter = -1 };
+        aprs_weather_report_t weather = {
+            .timestamp = "12010000",
+            .timestamp_format = "HMS",  // Explicitly set to HMS for 8-character timestamp
+            .temperature = 25.0,
+            .wind_speed = 10,
+            .wind_direction = 180,
+            .wind_gust = -1,
+            .rainfall_last_hour = -1,  // Explicitly set to -1 to exclude from encoding
+            .rainfall_24h = -1,
+            .rainfall_since_midnight = -1,
+            .barometric_pressure = -1,
+            .humidity = -1,
+            .luminosity = -1,
+            .snowfall_24h = -999.9,
+            .rain_rate = -1,
+            .water_height_feet = -999.9,
+            .water_height_meters = -999.9,
+            .indoors_temperature = -999.9,
+            .indoors_humidity = -1,
+            .raw_rain_counter = -1
+        };
         char info[100];
         int len = aprs_encode_weather_report(info, 100, &weather);
         TEST_ASSERT(len == 21, "Weather report encoding length incorrect", err);
@@ -900,7 +917,7 @@ uint8_t test_other(void) {
         char info[256];
         int len = aprs_encode_grid_square(info, sizeof(info), &data);
         char expected[256];
-        snprintf(expected, sizeof(expected), ">%s %s", data.grid_square, data.comment);
+        snprintf(expected, sizeof(expected), "[%s %s", data.grid_square, data.comment); // Changed from ">" to "["
         TEST_ASSERT(len == strlen(expected), "Grid square encoding length incorrect", err);
         COMPARE_FRAME(info, (size_t )len, expected, (size_t )strlen(expected), "Grid square encoding");
 
@@ -919,7 +936,7 @@ uint8_t test_other(void) {
         char info[256];
         int len = aprs_encode_df_report(info, sizeof(info), &data);
         char expected[256];
-        snprintf(expected, sizeof(expected), "@%03d/%d00%s", data.bearing, data.signal_strength, data.comment ? data.comment : "");
+        snprintf(expected, sizeof(expected), "+%03d/%d%s", data.bearing, data.signal_strength, data.comment ? data.comment : "");
         TEST_ASSERT(len == strlen(expected), "DF report encoding length incorrect", err);
         COMPARE_FRAME(info, (size_t )len, expected, (size_t )strlen(expected), "DF report encoding");
 
@@ -973,7 +990,7 @@ uint8_t test_other(void) {
         aprs_df_report_t data = { .bearing = 400, .signal_strength = 5, .comment = NULL };
         char info[256];
         int len = aprs_encode_df_report(info, sizeof(info), &data);
-        TEST_ASSERT(len == -1, "Should Polk report encoding length incorrect", err);
+        TEST_ASSERT(len == -1, "Should fail to encode invalid bearing", err);
     }
 
     // Error case for test packet: empty data
@@ -1029,7 +1046,7 @@ int test_aprs_grid_square() {
         int ret = aprs_encode_grid_square(info, sizeof(info), &data);
         TEST_ASSERT(ret > 0, "Encoding failed", err);
         char expected[256];
-        snprintf(expected, sizeof(expected), ">%s %s", data.grid_square, data.comment);
+        snprintf(expected, sizeof(expected), "[%s %s", data.grid_square, data.comment); // Changed from ">" to "["
         TEST_ASSERT(strcmp(info, expected) == 0, "Encoded string incorrect", err);
         aprs_grid_square_t decoded;
         ret = aprs_decode_grid_square(info, &decoded);
@@ -1045,7 +1062,7 @@ int test_aprs_grid_square() {
         int ret = aprs_encode_grid_square(info, sizeof(info), &data);
         TEST_ASSERT(ret > 0, "Encoding failed", err);
         char expected[256];
-        snprintf(expected, sizeof(expected), ">%s ", data.grid_square); // Note the space after %s
+        snprintf(expected, sizeof(expected), "[%s ", data.grid_square); // Changed from ">" to "["
         TEST_ASSERT(strcmp(info, expected) == 0, "Encoded string incorrect", err);
         aprs_grid_square_t decoded;
         ret = aprs_decode_grid_square(info, &decoded);
@@ -1076,7 +1093,7 @@ int test_aprs_df_report() {
         int ret = aprs_encode_df_report(info, sizeof(info), &data);
         TEST_ASSERT(ret > 0, "Encoding failed", err);
         char expected[256];
-        snprintf(expected, sizeof(expected), "@%03d/%d00%s", data.bearing, data.signal_strength, data.comment);  // Removed space
+        snprintf(expected, sizeof(expected), "+%03d/%d%s", data.bearing, data.signal_strength, data.comment);
         TEST_ASSERT(strcmp(info, expected) == 0, "Encoded string incorrect", err);
         aprs_df_report_t decoded;
         ret = aprs_decode_df_report(info, &decoded);
@@ -1093,7 +1110,7 @@ int test_aprs_df_report() {
         int ret = aprs_encode_df_report(info, sizeof(info), &data);
         TEST_ASSERT(ret > 0, "Encoding failed", err);
         char expected[256];
-        snprintf(expected, sizeof(expected), "@%03d/%d00", data.bearing, data.signal_strength);
+        snprintf(expected, sizeof(expected), "+%03d/%d", data.bearing, data.signal_strength);
         TEST_ASSERT(strcmp(info, expected) == 0, "Encoded string incorrect", err);
         aprs_df_report_t decoded;
         ret = aprs_decode_df_report(info, &decoded);
@@ -1193,14 +1210,19 @@ uint8_t test_aprs_ax25(void) {
         uint8_t *ax25_frame = ax25_frame_encode((ax25_frame_t*) &ui_frame, &ax25_len, &ax25_err);
         TEST_ASSERT(ax25_frame != NULL && ax25_err == 0, "AX.25 encoding ok", ax25_err);
 
-        // Prepare for HDLC encoding
-        unsigned char hdlc_input[ax25_len + 2];
+        // Prepare for HDLC encoding with dynamically allocated and initialized buffer
+        unsigned char *hdlc_input = calloc(ax25_len + 2, sizeof(unsigned char));
+        if (!hdlc_input) {
+            free(ax25_frame);
+            TEST_ASSERT(false, "Memory allocation for hdlc_input failed", err);
+        }
         memcpy(hdlc_input, ax25_frame, ax25_len);
         free(ax25_frame);
 
         unsigned char hdlc_frame[512];
         int hdlc_len;
         hdlc_frame_encode(hdlc_input, ax25_len, hdlc_frame, &hdlc_len);
+        free(hdlc_input);
 
         // Decode HDLC
         unsigned char decoded_ax25[256];

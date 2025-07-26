@@ -26,10 +26,32 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define APRS_DTI_RAW_GPS '$'
-#define APRS_DTI_GRID_SQUARE '%'
-#define APRS_DTI_DF_REPORT '+'
-#define APRS_DTI_TEST_PACKET ','
+// Data Type Identifiers (DTIs) for APRS packets
+#define APRS_DTI_POSITION_NO_TS_NO_MSG '!'     // Position without timestamp (no messaging)
+#define APRS_DTI_POSITION_NO_TS_WITH_MSG '='   // Position without timestamp (with messaging)
+#define APRS_DTI_POSITION_WITH_TS_NO_MSG '/'   // Position with timestamp (no messaging)
+#define APRS_DTI_POSITION_WITH_TS_WITH_MSG '@' // Position with timestamp (with messaging)
+#define APRS_DTI_OBJECT_REPORT ';'             // Object report
+#define APRS_DTI_ITEM_REPORT ')'               // Item report
+#define APRS_DTI_MESSAGE ':'                   // Message, includes bulletins and announcements
+#define APRS_DTI_STATUS '>'                    // Status report
+#define APRS_DTI_QUERY '?'                     // Query
+#define APRS_DTI_STATION_CAPABILITIES '<'      // Station capabilities
+#define APRS_DTI_TELEMETRY 'T'                 // Telemetry data
+#define APRS_DTI_WEATHER_REPORT '_'            // Weather report
+#define APRS_DTI_PEET_BROS_RAW_1 '#'           // Peet Bros U-II Weather Station (raw, format 1)
+#define APRS_DTI_PEET_BROS_RAW_2 '*'           // Peet Bros U-II Weather Station (raw, format 2)
+#define APRS_DTI_RAW_GPS '$'                   // Raw GPS data (e.g., NMEA sentences)
+#define APRS_DTI_USER_DEFINED '{'              // User-defined format
+#define APRS_DTI_THIRD_PARTY '}'               // Third-party format
+#define APRS_DTI_TEST_PACKET ','               // Test packet (invalid or test data)
+#define APRS_DTI_GRID_SQUARE '['               // Maidenhead grid locator beacon
+#define APRS_DTI_DF_REPORT '+'                 // Direction Finding report
+#define APRS_DTI_AGRELO '%'                    // Agrelo format (proprietary)
+#define APRS_DTI_RESERVED_1 '&'                // Reserved for future use
+#define APRS_DTI_MIC_E_CURRENT '`'             // Current Mic-E data
+#define APRS_DTI_MIC_E_OLD '\''                // Old Mic-E data
+#define APRS_DTI_RESERVED_2 '"'                // Reserved (non-standard)
 
 /**
  * @brief Structure to represent an AX.25 frame for APRS packets.
@@ -41,11 +63,6 @@ typedef struct {
     size_t info_len;              ///< Length of the information field.
 } aprs_frame_t;
 
-/**
- * @brief Structure for APRS position report without timestamp.
- *
- * This structure holds position data, including latitude, longitude, symbol, comment, and optional course and speed.
- */
 typedef struct {
     double latitude;      ///< Latitude in decimal degrees (-90 to 90).
     double longitude;     ///< Longitude in decimal degrees (-180 to 180).
@@ -56,7 +73,22 @@ typedef struct {
     bool has_course_speed; ///< Flag indicating if course and speed are included.
     int course;           ///< Course in degrees (0-360), if has_course_speed is true.
     int speed;            ///< Speed in knots (>=0), if has_course_speed is true.
+    int ambiguity;        ///< Ambiguity level (0-4) for position precision.
 } aprs_position_no_ts_t;
+
+typedef struct {
+    double latitude;      ///< Latitude in decimal degrees (-90 to 90).
+    double longitude;     ///< Longitude in decimal degrees (-180 to 180).
+    char symbol_table;    ///< Symbol table identifier ('/' or '\').
+    char symbol_code;     ///< Symbol code (printable ASCII).
+    char *comment;        ///< Optional comment field, null-terminated.
+    char timestamp[8];    ///< Timestamp in UTC (DDHHMMz for day/hour/minute).
+    char dti;             ///< Data Type Indicator ('@' or '/' for timestamped reports).
+    bool has_course_speed; ///< Flag indicating if course and speed are included.
+    int course;           ///< Course in degrees (0-360), if has_course_speed is true.
+    int speed;            ///< Speed in knots (>=0), if has_course_speed is true.
+    int ambiguity;        ///< Ambiguity level (0-4) for position precision.
+} aprs_position_with_ts_t;
 
 /**
  * @brief Structure for APRS message packet.
@@ -76,23 +108,26 @@ typedef struct {
  * Units follow APRS protocol conventions: temperature in Fahrenheit, wind speed in mph.
  */
 typedef struct {
-    char timestamp[9];                  // MMDDHHMM
-    float temperature;                  // degrees F, -999.9 if not present
-    int wind_speed;                     // mph, -1 if not present
-    int wind_direction;                 // degrees, -1 if not present
-    int wind_gust;                      // mph, -1 if not present
-    int rainfall_24h;                   // hundredths of an inch, -1 if not present
-    int rainfall_since_midnight;        // hundredths of an inch, -1 if not present
-    int barometric_pressure;            // tenths of a millibar, -1 if not present
-    int humidity;                       // percent, -1 if not present
-    int luminosity;                     // watts per square meter, -1 if not present
-    float snowfall_24h;                 // inches, -999.9 if not present
-    int rain_rate;                      // hundredths of an inch per hour, -1 if not present
-    float water_height_feet;            // feet, -999.9 if not present
-    float water_height_meters;          // meters, -999.9 if not present
-    float indoors_temperature;          // degrees F, -999.9 if not present
-    int indoors_humidity;               // percent, -1 if not present
-    int raw_rain_counter;               // raw rain counter, -1 if not present
+    char timestamp[9];
+    char timestamp_format[4];
+    bool is_zulu;
+    float temperature;
+    int wind_speed;
+    int wind_direction;
+    int wind_gust;
+    int rainfall_last_hour;
+    int rainfall_24h;
+    int rainfall_since_midnight;
+    int barometric_pressure;
+    int humidity;
+    int luminosity;
+    float snowfall_24h;
+    int rain_rate;
+    float water_height_feet;
+    float water_height_meters;
+    float indoors_temperature;
+    int indoors_humidity;
+    int raw_rain_counter;
 } aprs_weather_report_t;
 
 /**
@@ -108,21 +143,6 @@ typedef struct {
     char symbol_table;    ///< Symbol table identifier ('/' or '\').
     char symbol_code;     ///< Symbol code (printable ASCII).
 } aprs_object_report_t;
-
-/**
- * @brief Structure for APRS timestamped position report.
- *
- * This structure holds position data with a timestamp, symbol, and optional comment.
- */
-typedef struct {
-    char dti;             ///< Data Type Indicator ('/' or '@' for non-messaging/messaging capable).
-    char timestamp[8];    ///< Timestamp in DDHHMMz format (e.g., "111111z").
-    double latitude;      ///< Latitude in decimal degrees (-90 to 90).
-    double longitude;     ///< Longitude in decimal degrees (-180 to 180).
-    char symbol_table;    ///< Symbol table identifier ('/' or '\').
-    char symbol_code;     ///< Symbol code (printable ASCII).
-    char *comment;        ///< Optional comment field, null-terminated.
-} aprs_position_with_ts_t;
 
 /**
  * @brief Structure for Mic-E encoded position report.

@@ -59,3 +59,13 @@ uint16_t CRC(unsigned char *frame, int len) {
     crc = (crc ^ 0xFFFF) & 0xFFFF;
     return crc;
 }
+
+// Custom strnlen replacement for portability
+size_t my_strnlen(const char *s, size_t maxlen) {
+    size_t len = 0;
+    while (len < maxlen && s[len] != '\0') {
+        len++;
+    }
+    return len;
+}
+

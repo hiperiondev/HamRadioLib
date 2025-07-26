@@ -217,13 +217,11 @@ char* lat_to_aprs(double lat, int ambiguity) {
     int min_int = (int) min;
     int min_frac = (int) ((min - min_int) * 100);
     sprintf(buf, "%02d%02d.%02d%c", deg, min_int, min_frac, dir);
+
     if (ambiguity > 0) {
-        int digit_positions[] = { 0, 1, 2, 3, 5, 6 };  // positions of digits in buf
-        int num_digits = 6;
-        int start = num_digits - ambiguity;
-        if (start < 0)
-            start = 0;
-        for (int i = start; i < num_digits; i++) {
+        // Corrected digit positions: 0,1 (deg), 2,3 (min), 5,6 (hundredths)
+        int digit_positions[] = { 5, 6, 3, 2 };  // From right to left: hundredths, minutes
+        for (int i = 0; i < ambiguity && i < 4; i++) {
             buf[digit_positions[i]] = ' ';
         }
     }
@@ -242,70 +240,15 @@ char* lon_to_aprs(double lon, int ambiguity) {
     int min_int = (int) min;
     int min_frac = (int) ((min - min_int) * 100);
     sprintf(buf, "%03d%02d.%02d%c", deg, min_int, min_frac, dir);
+
     if (ambiguity > 0) {
-        int digit_positions[] = { 0, 1, 2, 3, 4, 6, 7 };  // positions of digits in buf
-        int num_digits = 7;
-        int start = num_digits - ambiguity;
-        if (start < 0)
-            start = 0;
-        for (int i = start; i < num_digits; i++) {
+        // Corrected digit positions: 6,7 (hundredths), 4,3 (minutes)
+        int digit_positions[] = { 6, 7, 4, 3 };  // From right to left
+        for (int i = 0; i < ambiguity && i < 4; i++) {
             buf[digit_positions[i]] = ' ';
         }
     }
     return buf;
-}
-
-int aprs_encode_position_no_ts(char *info, size_t len, const aprs_position_no_ts_t *data) {
-    if (data->symbol_table != '/' && data->symbol_table != '\\') {
-        return -1; // Invalid symbol table
-    }
-    if (!isprint(data->symbol_code)) {
-        return -1; // Invalid symbol code
-    }
-    char dti = (data->dti == '!' || data->dti == '=') ? data->dti : '!';
-
-    int ambiguity = 0;
-    if (data->comment && strncmp(data->comment, "AMB", 3) == 0 && isdigit(data->comment[3]) && data->comment[4] == '\0') {
-        ambiguity = data->comment[3] - '0';
-        if (ambiguity < 0 || ambiguity > 4) {
-            return -1; // Invalid ambiguity level
-        }
-    }
-
-    char *lat_str = lat_to_aprs(data->latitude, ambiguity);
-    char *lon_str = lon_to_aprs(data->longitude, ambiguity);
-    if (!lat_str || !lon_str) {
-        return -1;
-    }
-
-    int ret = snprintf(info, len, "%c%s%c%s%c", dti, lat_str, data->symbol_table, lon_str, data->symbol_code);
-    if (ret < 0 || (size_t) ret >= len) {
-        return -1;
-    }
-
-    if (data->has_course_speed) {
-        int course = data->course % 360;
-        if (course < 0)
-            course += 360;
-        int speed = data->speed;
-        if (speed < 0)
-            speed = 0;
-        int ret2 = snprintf(info + ret, len - ret, "%03d/%03d", course, speed);
-        if (ret2 < 0 || (size_t) ret2 >= len - ret) {
-            return -1;
-        }
-        ret += ret2;
-    }
-
-    if (data->comment && strncmp(data->comment, "AMB", 3) != 0) {
-        int ret2 = snprintf(info + ret, len - ret, "%s", data->comment);
-        if (ret2 < 0 || (size_t) ret2 >= len - ret) {
-            return -1;
-        }
-        ret += ret2;
-    }
-
-    return ret;
 }
 
 int aprs_encode_message(char *info, size_t len, const aprs_message_t *data) {
@@ -353,126 +296,247 @@ int aprs_encode_message(char *info, size_t len, const aprs_message_t *data) {
     return ret;
 }
 
-int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data) {
-    size_t info_len = strlen(info);
-    if (info_len < 20) {
-        return -1; // Minimum length for position without extension
+int aprs_encode_position_no_ts(char *info, size_t len, const aprs_position_no_ts_t *data) {
+    // Validate inputs
+    char dti = data->dti;
+    if (dti == '\0') {
+        dti = '!'; // Default to '!' if DTI is uninitialized
+    } else if (dti != '!' && dti != '=') {
+        printf("Error: Invalid DTI '%c'\n", dti);
+        return -1;
+    }
+    if (data->symbol_table != '/' && data->symbol_table != '\\') {
+        printf("Error: Invalid symbol table '%c'\n", data->symbol_table);
+        return -1;
+    }
+    if (!isprint(data->symbol_code)) {
+        printf("Error: Invalid symbol code '%c'\n", data->symbol_code);
+        return -1;
+    }
+    if (fabs(data->latitude) > 90.0f) {
+        printf("Error: Invalid latitude '%f'\n", data->latitude);
+        return -1;
+    }
+    if (fabs(data->longitude) > 180.0f) {
+        printf("Error: Invalid longitude '%f'\n", data->longitude);
+        return -1;
     }
 
+    // Handle course and speed
+    int course = 0;
+    if (data->has_course_speed) {
+        course = (data->course % 360 + 360) % 360; // Normalize course to 0-359
+        if (data->speed < 0) {
+            printf("Error: Invalid speed '%d'\n", data->speed);
+            return -1;
+        }
+    }
+
+    // Encode latitude and longitude with fixed lengths
+    char *lat_tmp = lat_to_aprs(data->latitude, data->ambiguity);
+    char *lon_tmp = lon_to_aprs(data->longitude, data->ambiguity);
+    if (lat_tmp == NULL || lon_tmp == NULL) {
+        printf("Error: Failed to convert latitude or longitude to APRS format\n");
+        return -1;
+    }
+
+    // Ensure latitude is 8 chars, longitude is 9 chars
+    char latitude[9];  // 8 + null
+    char longitude[10]; // 9 + null
+    memset(latitude, ' ', 8); // Fill with spaces
+    memset(longitude, ' ', 9);
+    latitude[8] = '\0';
+    longitude[9] = '\0';
+
+    // Copy lat_tmp, ensuring exactly 8 characters
+    size_t lat_len = my_strnlen(lat_tmp, 8);
+    memcpy(latitude, lat_tmp, lat_len);
+    for (size_t i = lat_len; i < 8; i++) {
+        latitude[i] = ' ';
+    }
+
+    // Copy lon_tmp, ensuring exactly 9 characters
+    size_t lon_len = my_strnlen(lon_tmp, 9);
+    memcpy(longitude, lon_tmp, lon_len);
+    for (size_t i = lon_len; i < 9; i++) {
+        longitude[i] = ' ';
+    }
+
+    // Encode base position string (20 chars: 1+8+1+9+1)
+    int ret = snprintf(info, len, "%c%s%c%s%c", dti, latitude, data->symbol_table, longitude, data->symbol_code);
+    if (ret != 20 || (size_t) ret >= len) {
+        printf("Error: Buffer too small or overflow for base position string\n");
+        return -1;
+    }
+
+    // Add course and speed if present
+    if (data->has_course_speed) {
+        int speed = data->speed;
+        int ret2 = snprintf(info + ret, len - ret, "%03d/%03d", course, speed);
+        if (ret2 < 0 || (size_t) ret2 >= len - ret) {
+            printf("Error: Buffer overflow for course/speed\n");
+            return -1;
+        }
+        ret += ret2;
+    }
+
+    // Add comment if present
+    if (data->comment && strlen(data->comment) > 0) {
+        int ret2 = snprintf(info + ret, len - ret, "%s", data->comment);
+        if (ret2 < 0 || (size_t) ret2 >= len - ret) {
+            printf("Error: Buffer overflow for comment\n");
+            return -1;
+        }
+        ret += ret2;
+    }
+
+    return ret; // Return length of encoded string
+}
+
+int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data) {
+    if (!info || !data || strlen(info) < 19) {
+        fprintf(stderr, "Error: Invalid input or insufficient length (%zu)\n", info ? strlen(info) : 0);
+        return -1;
+    }
+    memset(data, 0, sizeof(aprs_position_no_ts_t));
     if (info[0] != '!' && info[0] != '=') {
-        return -1; // Invalid data type identifier
+        fprintf(stderr, "Error: Invalid DTI '%c'\n", info[0]);
+        return -1;
     }
     data->dti = info[0];
-
-    // Parse latitude: info[1] to info[8] (ddmm.mmN/S)
     char lat_str[9];
     strncpy(lat_str, info + 1, 8);
     lat_str[8] = '\0';
-    int lat_ambiguity;
-    data->latitude = aprs_parse_lat(lat_str, &lat_ambiguity);
-    if (isnan(data->latitude)) {
-        return -1; // Invalid latitude
+    // Handle ambiguity for latitude
+    if (lat_str[2] == ' ' && lat_str[3] == ' ') {
+        lat_str[2] = '3';
+        lat_str[3] = '0';
+    } else if (lat_str[3] == ' ') {
+        lat_str[3] = '5';
+    } else if (lat_str[2] == ' ') {
+        lat_str[2] = '2';
     }
-
-    // Symbol table: info[9]
-    if (info[9] != '/' && info[9] != '\\') {
-        return -1; // Invalid symbol table
+    if (lat_str[5] == ' ' && lat_str[6] == ' ') {
+        lat_str[5] = '0';
+        lat_str[6] = '0';
+    } else if (lat_str[6] == ' ') {
+        lat_str[6] = '5';
+    } else if (lat_str[5] == ' ') {
+        lat_str[5] = '5';
+    }
+    // Now validate and parse latitude
+    if (!isdigit(lat_str[0]) || !isdigit(lat_str[1]) || !isdigit(lat_str[2]) || !isdigit(lat_str[3]) || lat_str[4] != '.' || !isdigit(lat_str[5])
+            || !isdigit(lat_str[6]) || (lat_str[7] != 'N' && lat_str[7] != 'S')) {
+        fprintf(stderr, "Error: Invalid latitude format '%s'\n", lat_str);
+        return -1;
+    }
+    char deg_str[3] = { lat_str[0], lat_str[1], '\0' };
+    char min_str[6] = { lat_str[2], lat_str[3], lat_str[4], lat_str[5], lat_str[6], '\0' };
+    int lat_deg = atoi(deg_str);
+    double lat_min = atof(min_str);
+    data->latitude = lat_deg + lat_min / 60.0;
+    if (lat_str[7] == 'S') {
+        data->latitude = -data->latitude;
     }
     data->symbol_table = info[9];
-
-    // Parse longitude: info[10] to info[18] (dddmm.mmE/W)
+    if (data->symbol_table != '/' && data->symbol_table != '\\') {
+        fprintf(stderr, "Error: Invalid symbol table '%c'\n", data->symbol_table);
+        return -1;
+    }
     char lon_str[10];
     strncpy(lon_str, info + 10, 9);
     lon_str[9] = '\0';
-    int lon_ambiguity;
-    data->longitude = aprs_parse_lon(lon_str, &lon_ambiguity);
-    if (isnan(data->longitude)) {
-        return -1; // Invalid longitude
+    // Handle ambiguity for longitude
+    if (lon_str[3] == ' ' && lon_str[4] == ' ') {
+        lon_str[3] = '3';
+        lon_str[4] = '0';
+    } else if (lon_str[4] == ' ') {
+        lon_str[4] = '5';
+    } else if (lon_str[3] == ' ') {
+        lon_str[3] = '2';
     }
-
-    // Symbol code: info[19]
-    if (!isprint(info[19])) {
-        return -1; // Invalid symbol code
+    if (lon_str[6] == ' ' && lon_str[7] == ' ') {
+        lon_str[6] = '0';
+        lon_str[7] = '0';
+    } else if (lon_str[7] == ' ') {
+        lon_str[7] = '5';
+    } else if (lon_str[6] == ' ') {
+        lon_str[6] = '5';
+    }
+    // Now validate and parse longitude
+    if (!isdigit(lon_str[0]) || !isdigit(lon_str[1]) || !isdigit(lon_str[2]) || !isdigit(lon_str[3]) || !isdigit(lon_str[4]) || lon_str[5] != '.'
+            || !isdigit(lon_str[6]) || !isdigit(lon_str[7]) || (lon_str[8] != 'E' && lon_str[8] != 'W')) {
+        fprintf(stderr, "Error: Invalid longitude format '%s'\n", lon_str);
+        return -1;
+    }
+    char lon_deg_str[4] = { lon_str[0], lon_str[1], lon_str[2], '\0' };
+    char lon_min_str[6] = { lon_str[3], lon_str[4], lon_str[5], lon_str[6], lon_str[7], '\0' };
+    int lon_deg = atoi(lon_deg_str);
+    double lon_min = atof(lon_min_str);
+    data->longitude = lon_deg + lon_min / 60.0;
+    if (lon_str[8] == 'W') {
+        data->longitude = -data->longitude;
     }
     data->symbol_code = info[19];
-
-    // Store ambiguity level in comment if present
-    data->comment = NULL;
-    if (lat_ambiguity > 0 || lon_ambiguity > 0) {
-        char amb_str[5];
-        snprintf(amb_str, sizeof(amb_str), "AMB%d", lat_ambiguity > lon_ambiguity ? lat_ambiguity : lon_ambiguity);
-        data->comment = my_strdup(amb_str);
-        if (!data->comment) {
-            return -1; // Memory allocation failure
-        }
+    if (!isprint(data->symbol_code)) {
+        fprintf(stderr, "Error: Invalid symbol code '%c'\n", data->symbol_code);
+        return -1;
     }
-
-    // Check for course/speed extension (ddd/ddd)
-    data->has_course_speed = false;
-    data->course = 0;
-    data->speed = 0;
-    if (info_len >= 27) {
-        // Check format: three digits, a slash, three digits
-        bool is_extension = true;
+    const char *p = info + 20;
+    if (strlen(p) >= 7 && p[3] == '/') {
+        char course_str[4], speed_str[4];
+        strncpy(course_str, p, 3);
+        course_str[3] = '\0';
+        strncpy(speed_str, p + 4, 3);
+        speed_str[3] = '\0';
+        // Validate course
         for (int i = 0; i < 3; i++) {
-            if (!isdigit(info[20 + i])) {
-                is_extension = false;
+            if (!isdigit(course_str[i])) {
+                fprintf(stderr, "Error: Invalid course format '%s'\n", course_str);
+                return -1;
+            }
+        }
+        int course = atoi(course_str);
+        if (course < 0 || course > 359) {
+            fprintf(stderr, "Error: Course '%d' out of range\n", course);
+            return -1;
+        }
+        // Validate speed
+        int valid_speed = 1;
+        for (int i = 0; i < 3; i++) {
+            if (!isdigit(speed_str[i])) {
+                valid_speed = 0;
                 break;
             }
         }
-        if (info[23] != '/') {
-            is_extension = false;
+        int speed = valid_speed ? atoi(speed_str) : -1;
+        if (speed < 0) {
+            valid_speed = 0;
         }
-        for (int i = 0; i < 3; i++) {
-            if (!isdigit(info[24 + i])) {
-                is_extension = false;
-                break;
-            }
-        }
-        if (is_extension) {
-            char course_str[4] = { info[20], info[21], info[22], '\0' };
-            char speed_str[4] = { info[24], info[25], info[26], '\0' };
-            data->course = atoi(course_str);
-            data->speed = atoi(speed_str);
-            if (data->course > 359 || data->course < 0) { // Course must be 0–359
-                return -1;
-            }
-            if (data->speed < 0) { // Speed must be non-negative
-                return -1;
-            }
-            data->has_course_speed = true;
-            if (info_len > 27) {
-                if (!data->comment) { // Only set comment if not already set by ambiguity
-                    data->comment = my_strdup(info + 27); // Comment starts after course/speed
-                    if (!data->comment) {
-                        return -1; // Memory allocation failure
-                    }
-                }
-            } else {
-                if (!data->comment) {
-                    data->comment = my_strdup(""); // Empty comment
-                    if (!data->comment) {
-                        return -1; // Memory allocation failure
-                    }
-                }
-            }
+        if (valid_speed) {
+            data->course = course;
+            data->speed = speed;
+            data->has_course_speed = 1;
+            p += 7;
         } else {
-            if (!data->comment) { // Only set comment if not already set by ambiguity
-                data->comment = my_strdup(info + 20); // Treat invalid extension as comment
-                if (!data->comment) {
-                    return -1; // Memory allocation failure
-                }
-            }
+            data->has_course_speed = 0;
         }
     } else {
-        if (!data->comment) { // Only set comment if not already set by ambiguity
-            data->comment = my_strdup(info + 20); // Comment starts after symbol code
-            if (!data->comment) {
-                return -1; // Memory allocation failure
-            }
+        data->has_course_speed = 0;
+    }
+    if (*p) {
+        data->comment = my_strdup(p);
+        if (!data->comment) {
+            fprintf(stderr, "Error: Memory allocation failed for comment\n");
+            return -1;
+        }
+    } else {
+        data->comment = my_strdup("");
+        if (!data->comment) {
+            fprintf(stderr, "Error: Memory allocation failed for empty comment\n");
+            return -1;
         }
     }
-
     return 0;
 }
 
@@ -513,50 +577,112 @@ int aprs_decode_message(const char *info, aprs_message_t *data) {
 }
 
 int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report_t *data) {
-    int written = 0;
-
-    // Ensure buffer is initialized
-    if (!info || len == 0)
-        return 0;
-
-    // Add underscore and timestamp
-    written += snprintf(info + written, len - written, "_%s", data->timestamp);
-
-    // Wind Direction
-    if (data->wind_direction >= 0 && data->wind_direction <= 360) {
-        written += snprintf(info + written, len - written, "c%03d", data->wind_direction);
+    if (!info || !data || len < 21) { // Minimum length for _DDHHMMz cDDD sDDD tDDD
+        fprintf(stderr, "Error: Invalid input or insufficient buffer size (%zu)\n", len);
+        return -1;
     }
 
-    // Wind Speed
+    size_t ts_len = strlen(data->timestamp);
+    // Validate timestamp based on format
+    if (strcmp(data->timestamp_format, "DHM") == 0 && ts_len != 7) {
+        fprintf(stderr, "Error: Invalid DHM timestamp length (%zu): '%s'\n", ts_len, data->timestamp);
+        return -1;
+    } else if (strcmp(data->timestamp_format, "HMS") == 0 && ts_len != 8) {
+        fprintf(stderr, "Error: Invalid HMS timestamp length (%zu): '%s'\n", ts_len, data->timestamp);
+        return -1;
+    }
+
+    int written = 0;
+    // Start with weather symbol and timestamp
+    written += snprintf(info + written, len - written, "_%s", data->timestamp);
+    if (written >= len) {
+        fprintf(stderr, "Error: Buffer overflow after timestamp\n");
+        return -1;
+    }
+
+    // Wind direction (cDDD)
+    if (data->wind_direction >= 0 && data->wind_direction <= 360) {
+        written += snprintf(info + written, len - written, "c%03d", data->wind_direction % 360);
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after wind direction\n");
+            return -1;
+        }
+    } else {
+        fprintf(stderr, "Error: Invalid wind direction (%d)\n", data->wind_direction);
+        return -1; // Required field invalid
+    }
+
+    // Wind speed (sDDD)
     if (data->wind_speed >= 0) {
         written += snprintf(info + written, len - written, "s%03d", data->wind_speed);
-    }
-
-    // Temperature
-    if (data->temperature >= -99.9 && data->temperature <= 999.9) {
-        int temp_int = (int) round(data->temperature);
-        if (temp_int >= 0) {
-            written += snprintf(info + written, len - written, "t%03d", temp_int);
-        } else {
-            written += snprintf(info + written, len - written, "t-%02d", -temp_int);
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after wind speed\n");
+            return -1;
         }
+    } else {
+        fprintf(stderr, "Error: Invalid wind speed (%d)\n", data->wind_speed);
+        return -1; // Required field invalid
     }
 
-    // Other fields (skipped if invalid to match test expectations)
+    // Temperature (tDDD or t-DD)
+    if (data->temperature >= -99.9 && data->temperature <= 999.9) {
+        int temp_f = (int) roundf(data->temperature);
+        if (temp_f >= 0) {
+            written += snprintf(info + written, len - written, "t%03d", temp_f);
+        } else {
+            written += snprintf(info + written, len - written, "t-%02d", -temp_f);
+        }
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after temperature\n");
+            return -1;
+        }
+    } else {
+        fprintf(stderr, "Error: Invalid temperature (%f)\n", data->temperature);
+        return -1; // Required field invalid
+    }
+
+    // Optional fields: only include if valid
     if (data->wind_gust >= 0) {
         written += snprintf(info + written, len - written, "g%03d", data->wind_gust);
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after wind gust\n");
+            return -1;
+        }
+    }
+    if (data->rainfall_last_hour >= 0) {
+        written += snprintf(info + written, len - written, "r%03d", data->rainfall_last_hour);
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after rainfall last hour\n");
+            return -1;
+        }
     }
     if (data->rainfall_24h >= 0) {
         written += snprintf(info + written, len - written, "p%03d", data->rainfall_24h);
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after rainfall 24h\n");
+            return -1;
+        }
     }
     if (data->rainfall_since_midnight >= 0) {
         written += snprintf(info + written, len - written, "P%03d", data->rainfall_since_midnight);
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after rainfall since midnight\n");
+            return -1;
+        }
     }
     if (data->humidity >= 0 && data->humidity <= 100) {
         written += snprintf(info + written, len - written, "h%02d", data->humidity);
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after humidity\n");
+            return -1;
+        }
     }
     if (data->barometric_pressure >= 0) {
         written += snprintf(info + written, len - written, "b%05d", data->barometric_pressure);
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after barometric pressure\n");
+            return -1;
+        }
     }
     if (data->luminosity >= 0) {
         if (data->luminosity < 1000) {
@@ -564,45 +690,104 @@ int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report
         } else {
             written += snprintf(info + written, len - written, "l%03d", data->luminosity - 1000);
         }
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after luminosity\n");
+            return -1;
+        }
     }
-    if (data->snowfall_24h >= 0.0) {
-        int snow_int = (int) round(data->snowfall_24h);
+    if (data->snowfall_24h >= 0.0f) {
+        int snow_int = (int) roundf(data->snowfall_24h * 10.0f);
         written += snprintf(info + written, len - written, "S%03d", snow_int);
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after snowfall\n");
+            return -1;
+        }
     }
     if (data->rain_rate >= 0) {
         written += snprintf(info + written, len - written, "R%03d", data->rain_rate);
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after rain rate\n");
+            return -1;
+        }
     }
-    if (data->water_height_feet >= 0.0) {
+    if (data->water_height_feet >= 0.0f) {
         written += snprintf(info + written, len - written, "F%.1f", data->water_height_feet);
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after water height feet\n");
+            return -1;
+        }
     }
-    if (data->water_height_meters >= 0.0) {
+    if (data->water_height_meters >= 0.0f) {
         written += snprintf(info + written, len - written, "f%.1f", data->water_height_meters);
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after water height meters\n");
+            return -1;
+        }
     }
-    if (data->indoors_temperature >= -99.9 && data->indoors_temperature <= 999.9) {
-        int temp_int = (int) round(data->indoors_temperature);
-        if (temp_int >= 0) {
-            written += snprintf(info + written, len - written, "i%02d", temp_int);
+    if (data->indoors_temperature >= -99.9f && data->indoors_temperature <= 999.9f) {
+        int temp_f = (int) roundf(data->indoors_temperature);
+        if (temp_f >= 0) {
+            written += snprintf(info + written, len - written, "i%02d", temp_f);
         } else {
-            written += snprintf(info + written, len - written, "i-%02d", -temp_int);
+            written += snprintf(info + written, len - written, "i-%02d", -temp_f);
+        }
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after indoors temperature\n");
+            return -1;
         }
     }
     if (data->indoors_humidity >= 0 && data->indoors_humidity <= 100) {
         written += snprintf(info + written, len - written, "I%02d", data->indoors_humidity);
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after indoors humidity\n");
+            return -1;
+        }
     }
     if (data->raw_rain_counter >= 0) {
         written += snprintf(info + written, len - written, "#%05d", data->raw_rain_counter);
+        if (written >= len) {
+            fprintf(stderr, "Error: Buffer overflow after raw rain counter\n");
+            return -1;
+        }
     }
 
     return written;
 }
 
 int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
-    // Initialize all fields to absence values
-    memset(data, 0, sizeof(*data));
+    if (info[0] != '_') {
+        return -1;
+    }
+    const char *p = info + 1;
+
+    // Parse timestamp
+    if (strlen(p) < 8) {
+        return -1;
+    }
+    strncpy(data->timestamp, p, 8);
+    data->timestamp[8] = '\0';
+    p += 8;
+
+    // Determine timestamp format and zulu flag
+    if (*p == 'z') {
+        strcpy(data->timestamp_format, "HMS");
+        data->is_zulu = 1;
+        p++;
+    } else if (*p == 'l') {
+        strcpy(data->timestamp_format, "HMS");
+        data->is_zulu = 0;
+        p++;
+    } else {
+        strcpy(data->timestamp_format, "DHM");
+        data->is_zulu = 1;
+    }
+
+    // Initialize data fields
     data->temperature = -999.9;
     data->wind_speed = -1;
     data->wind_direction = -1;
     data->wind_gust = -1;
+    data->rainfall_last_hour = -1;
     data->rainfall_24h = -1;
     data->rainfall_since_midnight = -1;
     data->barometric_pressure = -1;
@@ -616,23 +801,6 @@ int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
     data->indoors_humidity = -1;
     data->raw_rain_counter = -1;
 
-    const char *p = info;
-
-    // Check for positionless weather report starting with '_'
-    if (*p == '_') {
-        p++;
-        // Extract timestamp (8 characters: MMDDHHMM)
-        if (strlen(p) >= 8) {
-            strncpy(data->timestamp, p, 8);
-            data->timestamp[8] = '\0'; // Ensure null-termination
-            p += 8;
-        } else {
-            return -1; // Invalid timestamp
-        }
-    } else {
-        return -1; // Not a positionless weather report
-    }
-
     // Parse weather fields
     while (*p) {
         if (*p == 't') {
@@ -643,13 +811,13 @@ int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
                 strncpy(buf, p, 2);
                 buf[2] = '\0';
                 p += 2;
-                data->temperature = -atof(buf);
+                data->temperature = -atof(buf); // Temperature in Fahrenheit
             } else {
                 char buf[4];
                 strncpy(buf, p, 3);
                 buf[3] = '\0';
                 p += 3;
-                data->temperature = atof(buf);
+                data->temperature = atof(buf); // Temperature in Fahrenheit
             }
         } else if (*p == 's') {
             p++;
@@ -658,13 +826,6 @@ int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
             buf[3] = '\0';
             p += 3;
             data->wind_speed = atoi(buf);
-        } else if (*p == 'g') {
-            p++;
-            char buf[4];
-            strncpy(buf, p, 3);
-            buf[3] = '\0';
-            p += 3;
-            data->wind_gust = atoi(buf);
         } else if (*p == 'c') {
             p++;
             char buf[4];
@@ -672,6 +833,20 @@ int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
             buf[3] = '\0';
             p += 3;
             data->wind_direction = atoi(buf);
+        } else if (*p == 'g') {
+            p++;
+            char buf[4];
+            strncpy(buf, p, 3);
+            buf[3] = '\0';
+            p += 3;
+            data->wind_gust = atoi(buf);
+        } else if (*p == 'r') {
+            p++;
+            char buf[4];
+            strncpy(buf, p, 3);
+            buf[3] = '\0';
+            p += 3;
+            data->rainfall_last_hour = atoi(buf);
         } else if (*p == 'p') {
             p++;
             char buf[4];
@@ -701,19 +876,25 @@ int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
             p += 2;
             data->humidity = atoi(buf);
         } else if (*p == 'L' || *p == 'l') {
+            char type = *p;
             p++;
-            char buf[5];
-            strncpy(buf, p, 4);
-            buf[4] = '\0';
-            p += 4;
-            data->luminosity = atoi(buf);
+            char buf[4];
+            strncpy(buf, p, 3);
+            buf[3] = '\0';
+            p += 3;
+            int lum = atoi(buf);
+            if (type == 'L') {
+                data->luminosity = lum;
+            } else {
+                data->luminosity = lum + 1000;
+            }
         } else if (*p == 'S') {
             p++;
             char buf[4];
             strncpy(buf, p, 3);
             buf[3] = '\0';
             p += 3;
-            data->snowfall_24h = atof(buf);
+            data->snowfall_24h = atof(buf) / 10.0; // Assuming tenths of inches
         } else if (*p == 'R') {
             p++;
             char buf[4];
@@ -847,86 +1028,155 @@ int aprs_decode_object_report(const char *info, aprs_object_report_t *data) {
 }
 
 int aprs_encode_position_with_ts(char *info, size_t len, const aprs_position_with_ts_t *data) {
+    // Validate inputs
+    if (data->dti != '/' && data->dti != '@') {
+        printf("Error: Invalid DTI '%c'\n", data->dti);
+        return -1;
+    }
+    if (strlen(data->timestamp) != 7 || (data->timestamp[6] != 'z' && data->timestamp[6] != 'l')) {
+        printf("Error: Invalid timestamp '%s'\n", data->timestamp);
+        return -1;
+    }
     if (data->symbol_table != '/' && data->symbol_table != '\\') {
-        return -1; // Invalid symbol table
+        printf("Error: Invalid symbol table '%c'\n", data->symbol_table);
+        return -1;
     }
     if (!isprint(data->symbol_code)) {
-        return -1; // Invalid symbol code
+        printf("Error: Invalid symbol code '%c'\n", data->symbol_code);
+        return -1;
     }
-    char dti = (data->dti == '/' || data->dti == '@') ? data->dti : '@';
-
-    // Use ambiguity 0 (full precision) since timestamped positions don’t support ambiguity
-    char *lat_str = lat_to_aprs(data->latitude, 0);
-    char *lon_str = lon_to_aprs(data->longitude, 0);
-    if (!lat_str || !lon_str) {
+    if (fabs(data->latitude) > 90.0) {
+        printf("Error: Invalid latitude '%f'\n", data->latitude);
+        return -1;
+    }
+    if (fabs(data->longitude) > 180.0) {
+        printf("Error: Invalid longitude '%f'\n", data->longitude);
         return -1;
     }
 
-    int ret = snprintf(info, len, "%c%s%s%c%s%c", dti, data->timestamp, lat_str, data->symbol_table, lon_str, data->symbol_code);
+    // Convert latitude to DDMM.MM{N|S}
+    int lat_deg = (int) fabs(data->latitude);
+    double lat_min = (fabs(data->latitude) - lat_deg) * 60.0;
+    char lat_dir = data->latitude >= 0 ? 'N' : 'S';
+    char lat_str[10];
+    snprintf(lat_str, sizeof(lat_str), "%02d%05.2f%c", lat_deg, lat_min, lat_dir);
+
+    // Convert longitude to DDDMM.MM{E|W}
+    int lon_deg = (int) fabs(data->longitude);
+    double lon_min = (fabs(data->longitude) - lon_deg) * 60.0;
+    char lon_dir = data->longitude >= 0 ? 'E' : 'W';
+    char lon_str[11];
+    snprintf(lon_str, sizeof(lon_str), "%03d%05.2f%c", lon_deg, lon_min, lon_dir);
+
+    // Encode the string
+    int ret = snprintf(info, len, "%c%s%s%c%s%c", data->dti, data->timestamp, lat_str, data->symbol_table, lon_str, data->symbol_code);
     if (ret < 0 || (size_t) ret >= len) {
+        printf("Error: Buffer too small (required %d, available %zu)\n", ret, len);
         return -1;
     }
 
+    // Add comment if present
     if (data->comment) {
         int ret2 = snprintf(info + ret, len - ret, "%s", data->comment);
         if (ret2 < 0 || (size_t) ret2 >= len - ret) {
+            printf("Error: Buffer overflow for comment\n");
             return -1;
         }
         ret += ret2;
     }
 
-    return ret;
+    return ret; // Return length of encoded string
 }
 
 int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data) {
-    if (strlen(info) < 26 || (info[0] != '/' && info[0] != '@')) {
+    if (!info || !data)
         return -1;
-    }
 
+    // Check DTI and minimum length
+    if (info[0] != '@' && info[0] != '/')
+        return -1;
+    if (strlen(info) < 26)
+        return -1; // Minimum length for DTI+TS+LAT+TABLE+LON+CODE
+
+    // Initialize data
+    *data = (aprs_position_with_ts_t){0};
+
+    // Extract DTI
     data->dti = info[0];
 
-    // Extract timestamp (positions 1-7)
-    strncpy(data->timestamp, info + 1, 7);
-    data->timestamp[7] = '\0';
-    for (int i = 0; i < 7; i++) {
-        if (!isdigit(data->timestamp[i]) && data->timestamp[i] != 'z') {
-            return -1;
-        }
+    // Extract timestamp (DDHHMMz)
+    if (strlen(info) < 8) {
+        return -1;
     }
+    memcpy(data->timestamp, info + 1, 7);
+    data->timestamp[7] = '\0'; // Null-terminate the timestamp
     if (data->timestamp[6] != 'z') {
-        return -1; // Must end with 'z' for simplified format
+        return -1;
     }
 
-    // Parse latitude (positions 8-15)
-    char lat_str[9];
+    // Extract latitude (8 chars, e.g., 4903.50N)
+    char lat_str[9] = {0};
     strncpy(lat_str, info + 8, 8);
-    lat_str[8] = '\0';
-    int lat_ambiguity; // Dummy variable for ambiguity (not used in timestamped positions)
-    data->latitude = aprs_parse_lat(lat_str, &lat_ambiguity);
-    if (isnan(data->latitude)) {
+    if (lat_str[7] != 'N' && lat_str[7] != 'S')
         return -1;
-    }
 
-    // Symbol table (position 16)
+    // Parse latitude with improved precision
+    char deg_str[3] = {lat_str[0], lat_str[1], '\0'};
+    char min_str[3] = {lat_str[2], lat_str[3], '\0'};
+    char frac_str[3] = {lat_str[5], lat_str[6], '\0'};
+    double deg = atof(deg_str);
+    double min = atof(min_str);
+    double frac = atof(frac_str) / 100.0;
+    data->latitude = deg + (min + frac) / 60.0;
+    if (lat_str[7] == 'S')
+        data->latitude = -data->latitude;
+
+    // Extract symbol table
     data->symbol_table = info[16];
-
-    // Parse longitude (positions 17-25)
-    char lon_str[10];
-    strncpy(lon_str, info + 17, 9);
-    lon_str[9] = '\0';
-    int lon_ambiguity; // Dummy variable for ambiguity (not used in timestamped positions)
-    data->longitude = aprs_parse_lon(lon_str, &lon_ambiguity);
-    if (isnan(data->longitude)) {
+    if (data->symbol_table != '/' && data->symbol_table != '\\')
         return -1;
+
+    // Extract longitude (9 chars, e.g., 07201.75W)
+    char lon_str[10] = {0};
+    strncpy(lon_str, info + 17, 9);
+    if (lon_str[8] != 'E' && lon_str[8] != 'W')
+        return -1;
+
+    // Parse longitude with improved precision
+    char lon_deg_str[4] = {lon_str[0], lon_str[1], lon_str[2], '\0'};
+    char lon_min_str[3] = {lon_str[3], lon_str[4], '\0'};
+    char lon_frac_str[3] = {lon_str[6], lon_str[7], '\0'};
+    double lon_deg = atof(lon_deg_str);
+    double lon_min = atof(lon_min_str);
+    double lon_frac = atof(lon_frac_str) / 100.0;
+    data->longitude = lon_deg + (lon_min + lon_frac) / 60.0;
+    if (lon_str[8] == 'W')
+        data->longitude = -data->longitude;
+
+    // Extract symbol code
+    data->symbol_code = info[26];
+    if (!isprint(data->symbol_code))
+        return -1;
+
+    // Extract course/speed if present (e.g., 123/456)
+    data->has_course_speed = false;
+    if (strlen(info) >= 34 && info[27] == '/' && isdigit(info[28]) && isdigit(info[29]) &&
+        isdigit(info[30]) && info[31] == '/' && isdigit(info[32]) && isdigit(info[33]) && isdigit(info[34])) {
+        char course_str[4] = {info[28], info[29], info[30], '\0'};
+        char speed_str[4] = {info[32], info[33], info[34], '\0'};
+        data->course = atoi(course_str);
+        data->speed = atoi(speed_str);
+        data->has_course_speed = true;
     }
 
-    // Symbol code (position 26)
-    data->symbol_code = info[26];
-
-    // Comment (position 27 onwards)
-    data->comment = my_strdup(info + 27);
-    if (!data->comment && info[27] != '\0') {
-        return -1;
+    // Extract comment (if any)
+    const char *comment_start = info + (data->has_course_speed ? 35 : 27);
+    if (*comment_start) {
+        data->comment = my_strdup(comment_start);
+        if (!data->comment)
+            return -1;
+    } else {
+        data->comment = NULL;
     }
 
     return 0;
@@ -1536,17 +1786,17 @@ int aprs_encode_grid_square(char *info, size_t len, const aprs_grid_square_t *da
     }
     size_t grid_len = strlen(data->grid_square);
     if (grid_len != 4 && grid_len != 6) {
-        return -1;  // Invalid grid square length
-    }
-    size_t comment_len = data->comment ? strlen(data->comment) : 0;
-    size_t total_len = 1 + grid_len + 1 + comment_len;  // '>' + grid + ' ' + comment
-    if (len < total_len + 1) {  // +1 for null terminator
         return -1;
     }
-    info[0] = '>';  // Use '>' as DTI
+    size_t comment_len = data->comment ? strlen(data->comment) : 0;
+    size_t total_len = 1 + grid_len + 1 + comment_len;
+    if (len < total_len + 1) {
+        return -1;
+    }
+    info[0] = APRS_DTI_GRID_SQUARE;
     memcpy(info + 1, data->grid_square, grid_len);
     size_t pos = 1 + grid_len;
-    info[pos++] = ' ';  // Add space separator
+    info[pos++] = ' ';
     if (comment_len > 0) {
         memcpy(info + pos, data->comment, comment_len);
         pos += comment_len;
@@ -1556,25 +1806,23 @@ int aprs_encode_grid_square(char *info, size_t len, const aprs_grid_square_t *da
 }
 
 int aprs_decode_grid_square(const char *info, aprs_grid_square_t *data) {
-    if (info == NULL || info[0] != '>') {
+    if (info == NULL || info[0] != APRS_DTI_GRID_SQUARE) {
         return -1;
     }
     size_t len = strlen(info);
-    if (len < 6) {  // At least '>' + 4 chars + ' '
+    if (len < 6) {
         return -1;
     }
-    // Find the space separator
     const char *space_pos = strchr(info + 1, ' ');
     if (space_pos == NULL) {
-        return -1;  // No space separator found
+        return -1;
     }
     size_t grid_len = space_pos - (info + 1);
     if (grid_len != 4 && grid_len != 6) {
-        return -1;  // Invalid grid square length
+        return -1;
     }
     strncpy(data->grid_square, info + 1, grid_len);
     data->grid_square[grid_len] = '\0';
-    // Comment starts after the space
     size_t comment_start = space_pos - info + 1;
     size_t comment_len = len - comment_start;
     if (comment_len > 0) {
@@ -1592,52 +1840,52 @@ int aprs_decode_grid_square(const char *info, aprs_grid_square_t *data) {
 
 int aprs_encode_df_report(char *info, size_t len, const aprs_df_report_t *data) {
     if (data == NULL || data->bearing < 0 || data->bearing > 359 || data->signal_strength < 0 || data->signal_strength > 9) {
-        return -1;  // Invalid bearing or signal strength
-    }
-    size_t comment_len = data->comment ? strlen(data->comment) : 0;
-    size_t total_len = 1 + 3 + 1 + 3 + comment_len;  // '@' + BRG (3) + '/' + NRQ (3) + comment
-    if (len < total_len + 1) {  // +1 for null terminator
         return -1;
     }
-    info[0] = '@';  // Use '@' as DTI for position report
-    snprintf(info + 1, 8, "%03d/%d00", data->bearing, data->signal_strength);  // BRG/NRQ format
-    size_t pos = 8;  // after DTI + BRG + '/' + NRQ
+    size_t comment_len = data->comment ? strlen(data->comment) : 0;
+    size_t total_len = 6 + comment_len;
+    if (len < total_len + 1) {
+        return -1;
+    }
+    info[0] = APRS_DTI_DF_REPORT;
+    snprintf(info + 1, 6, "%03d/%d", data->bearing, data->signal_strength);
+    size_t pos = 6;
     if (comment_len > 0) {
         memcpy(info + pos, data->comment, comment_len);
         pos += comment_len;
     }
     info[pos] = '\0';
+    printf("Encoded DF report: '%s' (length: %zu)\n", info, total_len);
     return total_len;
 }
 
 int aprs_decode_df_report(const char *info, aprs_df_report_t *data) {
-    if (info[0] != '@' || strlen(info) < 8) {  // '@' + 3 digits + '/' + 3 digits
+    size_t len = strlen(info);
+    if (len < 6 || info[0] != APRS_DTI_DF_REPORT) {
         return -1;
     }
-    char bearing_str[4];
-    strncpy(bearing_str, info + 1, 3);
-    bearing_str[3] = '\0';
+    if (!isdigit(info[1]) || !isdigit(info[2]) || !isdigit(info[3]) || info[4] != '/' || !isdigit(info[5])) {
+        return -1;
+    }
+    char bearing_str[4] = { info[1], info[2], info[3], '\0' };
     data->bearing = atoi(bearing_str);
     if (data->bearing < 0 || data->bearing > 359) {
         return -1;
     }
-    if (info[4] != '/') {
-        return -1;
-    }
-    char nrq_str[4];
-    strncpy(nrq_str, info + 5, 3);
-    nrq_str[3] = '\0';
-    data->signal_strength = nrq_str[0] - '0';  // Assuming NRQ is "S00" where S is signal strength
+    data->signal_strength = info[5] - '0';
     if (data->signal_strength < 0 || data->signal_strength > 9) {
         return -1;
     }
-    size_t len = strlen(info);
-    if (len > 8) {
-        data->comment = malloc(strlen(info + 8) + 1);
-        if (!data->comment) {
-            return -1;
+    if (len > 6) {
+        size_t comment_len = len - 6;
+        if (comment_len > 0) {
+            data->comment = my_strdup(info + 6);
+            if (!data->comment) {
+                return -1;
+            }
+        } else {
+            data->comment = NULL;
         }
-        strcpy(data->comment, info + 8);
     } else {
         data->comment = NULL;
     }
