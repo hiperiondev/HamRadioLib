@@ -27,5 +27,6 @@
 uint16_t CRC(unsigned char *frame, int len);
 void trim_trailing_spaces(char *str);
 size_t my_strnlen(const char *s, size_t maxlen);
+char* my_strdup(const char *s);
 
 #endif /* COMMON_H_ */

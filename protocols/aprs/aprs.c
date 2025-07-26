@@ -25,23 +25,10 @@
 #include <math.h>
 #include <stddef.h>
 #include <ctype.h>
+#include <limits.h>
 
 #include "common.h"
 #include "aprs.h"
-
-/**
- * Custom strdup implementation for C99.
- * @param s String to duplicate
- * @return Pointer to duplicated string or NULL on failure
- */
-static char* my_strdup(const char *s) {
-    size_t len = strlen(s) + 1;
-    char *dup = malloc(len);
-    if (dup) {
-        memcpy(dup, s, len);
-    }
-    return dup;
-}
 
 /**
  * Custom strndup implementation for C99.
@@ -1903,4 +1890,357 @@ int aprs_decode_test_packet(const char *info, aprs_test_packet_t *data) {
     }
     data->data_len = len;
     return 0;
+}
+
+// Base91 character set for APRS compression
+static const char BASE91_CHARSET[] = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+
+// Constants for Base91 compression
+#define BASE91_SIZE 91
+#define LAT_SCALE 380926.0    // 91^4 / 2 for latitude scaling
+#define LON_SCALE 190463.0    // 91^4 / 4 for longitude scaling
+#define ALTITUDE_OFFSET 10000 // Offset for altitude encoding
+
+/**
+ * Encode a 32-bit value to Base91 with specified length
+ */
+static void encode_base91(uint32_t value, char *output, int length) {
+    int i;
+    for (i = length - 1; i >= 0; i--) {
+        output[i] = BASE91_CHARSET[value % BASE91_SIZE];
+        value /= BASE91_SIZE;
+    }
+}
+
+/**
+ * Decode a Base91 string to a 32-bit value
+ */
+static uint32_t decode_base91(const char *input, int length) {
+    uint32_t result = 0;
+    int i;
+
+    for (i = 0; i < length; i++) {
+        const char *pos = strchr(BASE91_CHARSET, input[i]);
+        if (pos == NULL) {
+            return 0; // Invalid character
+        }
+        result = result * BASE91_SIZE + (pos - BASE91_CHARSET);
+    }
+    return result;
+}
+
+/**
+ * Encode latitude to 4-character Base91 string
+ */
+static void encode_latitude(double latitude, char *output) {
+    if (latitude < -90.0 || latitude > 90.0) {
+        memset(output, BASE91_CHARSET[0], 4);
+        return;
+    }
+
+    uint32_t scaled = (uint32_t)round(LAT_SCALE * (90.0 - latitude));
+    if (scaled > 691574) scaled = 691574; // 91^4 - 1
+
+    encode_base91(scaled, output, 4);
+}
+
+/**
+ * Decode 4-character Base91 string to latitude
+ */
+static double decode_latitude(const char *input) {
+    uint32_t decoded = decode_base91(input, 4);
+    return 90.0 - (decoded / LAT_SCALE);
+}
+
+/**
+ * Encode longitude to 4-character Base91 string
+ */
+static void encode_longitude(double longitude, char *output) {
+    if (longitude < -180.0 || longitude > 180.0) {
+        memset(output, BASE91_CHARSET[0], 4);
+        return;
+    }
+
+    uint32_t scaled = (uint32_t)round(LON_SCALE * (180.0 + longitude));
+    if (scaled > 691574) scaled = 691574; // 91^4 - 1
+
+    encode_base91(scaled, output, 4);
+}
+
+/**
+ * Decode 4-character Base91 string to longitude
+ */
+static double decode_longitude(const char *input) {
+    uint32_t decoded = decode_base91(input, 4);
+    return (decoded / LON_SCALE) - 180.0;
+}
+
+/**
+ * Encode course and speed to 2-character Base91 string
+ */
+static void encode_course_speed(int course, int speed, char *output) {
+    if (course < 0 || course > 360 || speed < 0 || speed > 1943) {
+        output[0] = ' ';
+        output[1] = ' ';
+        return;
+    }
+
+    // Normalize course to 0-359
+    if (course == 360) course = 0;
+
+    uint32_t encoded = course * 1000 + speed + 1000;
+    if (encoded > 8280) encoded = 8280; // 91^2 - 1
+
+    encode_base91(encoded, output, 2);
+}
+
+/**
+ * Decode 2-character Base91 string to course and speed
+ */
+static void decode_course_speed(const char *input, int *course, int *speed) {
+    uint32_t decoded = decode_base91(input, 2);
+    if (decoded < 1000) {
+        *course = -1;
+        *speed = -1;
+        return;
+    }
+
+    decoded -= 1000;
+    *course = decoded / 1000;
+    *speed = decoded % 1000;
+
+    if (*course > 360 || *speed > 1943) {
+        *course = -1;
+        *speed = -1;
+    }
+}
+
+/**
+ * Encode altitude to 2-character Base91 string
+ */
+static void encode_altitude(int altitude, char *output) {
+    int offset_altitude = altitude + ALTITUDE_OFFSET;
+    if (offset_altitude < 0 || offset_altitude > 8280) {
+        output[0] = ' ';
+        output[1] = ' ';
+        return;
+    }
+
+    encode_base91((uint32_t)offset_altitude, output, 2);
+}
+
+/**
+ * Decode 2-character Base91 string to altitude
+ */
+static int decode_altitude(const char *input) {
+    uint32_t decoded = decode_base91(input, 2);
+    return (int)decoded - ALTITUDE_OFFSET;
+}
+
+/**
+ * Create compression type byte
+ */
+static char create_compression_type(bool has_data, bool is_altitude, bool is_current) {
+    uint8_t byte = 0;
+
+    if (is_current) {
+        byte |= 0x20; // GPS fix is current
+    }
+
+    if (has_data) {
+        if (is_altitude) {
+            byte |= 0x02; // Altitude data format
+        } else {
+            byte |= 0x01; // Course/speed data format
+        }
+    }
+    // else: no additional data (0x00)
+
+    // Add offset to get into Base91 printable range
+    return BASE91_CHARSET[byte + 33];
+}
+
+/**
+ * Parse compression type byte
+ */
+static void parse_compression_type(char type_char, bool *has_data, bool *is_altitude, bool *is_current) {
+    const char *pos = strchr(BASE91_CHARSET, type_char);
+    if (pos == NULL) {
+        *has_data = false;
+        *is_altitude = false;
+        *is_current = false;
+        return;
+    }
+
+    uint8_t byte = (pos - BASE91_CHARSET) - 33;
+
+    *is_current = (byte & 0x20) != 0;
+    *has_data = (byte & 0x03) != 0;
+    *is_altitude = (byte & 0x03) == 0x02;
+}
+
+int aprs_encode_compressed_position(char *info, size_t len, const aprs_compressed_position_t *data) {
+    if (!info || !data || len < 15) {
+        return -1;
+    }
+
+    // Validate input
+    if (data->latitude < -90.0 || data->latitude > 90.0 ||
+        data->longitude < -180.0 || data->longitude > 180.0) {
+        return -1;
+    }
+
+    char compressed[14]; // 13 chars + null terminator
+    int pos = 0;
+
+    // Encode latitude (4 characters)
+    encode_latitude(data->latitude, &compressed[pos]);
+    pos += 4;
+
+    // Encode longitude (4 characters)
+    encode_longitude(data->longitude, &compressed[pos]);
+    pos += 4;
+
+    // Symbol table
+    compressed[pos++] = data->symbol_table;
+
+    // Encode additional data (2 characters)
+    bool has_data = false;
+    bool is_altitude = false;
+
+    if (data->has_altitude && data->altitude != INT_MIN) {
+        encode_altitude(data->altitude, &compressed[pos]);
+        has_data = true;
+        is_altitude = true;
+    } else if (data->has_course_speed && data->course >= 0 && data->speed >= 0) {
+        encode_course_speed(data->course, data->speed, &compressed[pos]);
+        has_data = true;
+        is_altitude = false;
+    } else {
+        // No additional data
+        compressed[pos] = ' ';
+        compressed[pos + 1] = ' ';
+    }
+    pos += 2;
+
+    // Symbol code
+    compressed[pos++] = data->symbol_code;
+
+    // Compression type
+    compressed[pos++] = create_compression_type(has_data, is_altitude, true);
+
+    compressed[pos] = '\0';
+
+    // Assemble final packet
+    int written = snprintf(info, len, "%c%s%s",
+                          data->dti ? data->dti : APRS_DTI_POSITION_NO_TS_NO_MSG,
+                          compressed,
+                          data->comment ? data->comment : "");
+
+    if (written >= (int)len) {
+        return -1; // Buffer too small
+    }
+
+    return written;
+}
+
+int aprs_decode_compressed_position(const char *info, aprs_compressed_position_t *data) {
+    if (!info || !data || strlen(info) < 14) {
+        return -1;
+    }
+
+    // Initialize structure
+    memset(data, 0, sizeof(aprs_compressed_position_t));
+    data->speed = -1;
+    data->course = -1;
+    data->altitude = INT_MIN;
+
+    // Extract DTI
+    data->dti = info[0];
+
+    // Validate DTI
+    if (data->dti != APRS_DTI_POSITION_NO_TS_NO_MSG &&
+        data->dti != APRS_DTI_POSITION_NO_TS_WITH_MSG &&
+        data->dti != APRS_DTI_POSITION_WITH_TS_NO_MSG &&
+        data->dti != APRS_DTI_POSITION_WITH_TS_WITH_MSG) {
+        return -1;
+    }
+
+    // Extract compressed position (13 characters after DTI)
+    const char *compressed = &info[1];
+
+    if (strlen(compressed) < 13) {
+        return -1;
+    }
+
+    // Decode latitude (characters 0-3)
+    data->latitude = decode_latitude(&compressed[0]);
+    if (data->latitude < -90.0 || data->latitude > 90.0) {
+        return -1;
+    }
+
+    // Decode longitude (characters 4-7)
+    data->longitude = decode_longitude(&compressed[4]);
+    if (data->longitude < -180.0 || data->longitude > 180.0) {
+        return -1;
+    }
+
+    // Extract symbol table (character 8)
+    data->symbol_table = compressed[8];
+
+    // Extract symbol code (character 11)
+    data->symbol_code = compressed[11];
+
+    // Parse compression type (character 12)
+    bool has_data, is_altitude, is_current;
+    parse_compression_type(compressed[12], &has_data, &is_altitude, &is_current);
+
+    // Decode additional data if present (characters 9-10)
+    if (has_data) {
+        if (is_altitude) {
+            data->altitude = decode_altitude(&compressed[9]);
+            data->has_altitude = true;
+        } else {
+            decode_course_speed(&compressed[9], &data->course, &data->speed);
+            if (data->course >= 0 && data->speed >= 0) {
+                data->has_course_speed = true;
+            }
+        }
+    }
+
+    // Extract comment (everything after the 13-character compressed position)
+    if (strlen(info) > 14) {
+        size_t comment_len = strlen(info) - 14;
+        data->comment = malloc(comment_len + 1);
+        if (data->comment) {
+            strcpy(data->comment, &info[14]);
+        }
+    }
+
+    return 0;
+}
+
+bool aprs_is_compressed_position(const char *info) {
+    if (!info || strlen(info) < 14) {
+        return false;
+    }
+
+    char dti = info[0];
+    if (dti != APRS_DTI_POSITION_NO_TS_NO_MSG &&
+        dti != APRS_DTI_POSITION_NO_TS_WITH_MSG &&
+        dti != APRS_DTI_POSITION_WITH_TS_NO_MSG &&
+        dti != APRS_DTI_POSITION_WITH_TS_WITH_MSG) {
+        return false;
+    }
+
+    // Try to decode and see if it succeeds
+    aprs_compressed_position_t temp;
+    return aprs_decode_compressed_position(info, &temp) == 0;
+}
+
+void aprs_free_compressed_position(aprs_compressed_position_t *data) {
+    if (data && data->comment) {
+        free(data->comment);
+        data->comment = NULL;
+    }
 }

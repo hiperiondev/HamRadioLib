@@ -24,6 +24,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <math.h>
+#include <limits.h>
 
 #include "common.h"
 #include "test_common.h"
@@ -1170,6 +1171,104 @@ int test_aprs_test_packet() {
     return err;
 }
 
+int test_aprs_compressed_position() {
+    printf("test_aprs_compressed_position\n");
+    uint8_t err = 0;
+
+    // Test 1: Basic position (NYC)
+    {
+        aprs_compressed_position_t pos = {
+            .latitude = 40.7128,
+            .longitude = -74.0060,
+            .symbol_table = '/',
+            .symbol_code = '-',
+            .comment = NULL,
+            .dti = APRS_DTI_POSITION_NO_TS_NO_MSG,
+            .has_course_speed = false,
+            .has_altitude = false,
+            .course = -1,
+            .speed = -1,
+            .altitude = INT_MIN
+        };
+
+        char info[100];
+        int len = aprs_encode_compressed_position(info, sizeof(info), &pos);
+        TEST_ASSERT(len > 0, "Compressed position encoding failed", err);
+        TEST_ASSERT(len == 14, "Compressed position length incorrect", err);
+
+        aprs_compressed_position_t decoded;
+        int ret = aprs_decode_compressed_position(info, &decoded);
+        TEST_ASSERT(ret == 0, "Compressed position decoding failed", err);
+        TEST_ASSERT(fabs(decoded.latitude - 40.7128) < 0.01, "Decoded latitude incorrect", err);
+        TEST_ASSERT(fabs(decoded.longitude - (-74.0060)) < 0.01, "Decoded longitude incorrect", err);
+
+        aprs_free_compressed_position(&decoded);
+    }
+
+    // Test 2: Position with course and speed
+    {
+        aprs_compressed_position_t pos = {
+            .latitude = 34.0522,
+            .longitude = -118.2437,
+            .symbol_table = '/',
+            .symbol_code = '>',
+            .comment = my_strdup("Moving west"),
+            .dti = APRS_DTI_POSITION_NO_TS_NO_MSG,
+            .has_course_speed = true,
+            .has_altitude = false,
+            .course = 270,
+            .speed = 65,
+            .altitude = INT_MIN
+        };
+
+        char info[100];
+        int len = aprs_encode_compressed_position(info, sizeof(info), &pos);
+        TEST_ASSERT(len > 0, "Compressed position with course/speed encoding failed", err);
+
+        aprs_compressed_position_t decoded;
+        int ret = aprs_decode_compressed_position(info, &decoded);
+        TEST_ASSERT(ret == 0, "Compressed position with course/speed decoding failed", err);
+        TEST_ASSERT(decoded.has_course_speed, "Course/speed flag not set", err);
+        TEST_ASSERT(abs(decoded.course - 270) <= 1, "Decoded course incorrect", err);
+        TEST_ASSERT(abs(decoded.speed - 65) <= 1, "Decoded speed incorrect", err);
+
+        free(pos.comment);
+        aprs_free_compressed_position(&decoded);
+    }
+
+    // Test 3: Position with altitude
+    {
+        aprs_compressed_position_t pos = {
+            .latitude = 39.7392,
+            .longitude = -104.9903,
+            .symbol_table = '\\',
+            .symbol_code = '^',
+            .comment = my_strdup("Mile High"),
+            .dti = APRS_DTI_POSITION_NO_TS_NO_MSG,
+            .has_course_speed = false,
+            .has_altitude = true,
+            .course = -1,
+            .speed = -1,
+            .altitude = 5280
+        };
+
+        char info[100];
+        int len = aprs_encode_compressed_position(info, sizeof(info), &pos);
+        TEST_ASSERT(len > 0, "Compressed position with altitude encoding failed", err);
+
+        aprs_compressed_position_t decoded;
+        int ret = aprs_decode_compressed_position(info, &decoded);
+        TEST_ASSERT(ret == 0, "Compressed position with altitude decoding failed", err);
+        TEST_ASSERT(decoded.has_altitude, "Altitude flag not set", err);
+        TEST_ASSERT(abs(decoded.altitude - 5280) <= 10, "Decoded altitude incorrect", err);
+
+        free(pos.comment);
+        aprs_free_compressed_position(&decoded);
+    }
+
+    return err;
+}
+
 int test_aprs_main() {
     int result = 0;
     printf("\n----------------------------------------------------------------------------------\n");
@@ -1195,6 +1294,7 @@ int test_aprs_main() {
     result |= test_aprs_grid_square();
     result |= test_aprs_df_report();
     result |= test_aprs_test_packet();
+    result |= test_aprs_compressed_position();
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Tests APRS Completed. %s\n", result == 0 ? "All tests passed" : "Some tests failed");
     printf("----------------------------------------------------------------------------------\n\n");

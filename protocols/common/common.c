@@ -22,8 +22,24 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "common.h"
+
+/**
+ * Custom strdup implementation for C99.
+ * @param s String to duplicate
+ * @return Pointer to duplicated string or NULL on failure
+ */
+char* my_strdup(const char *s) {
+    size_t len = strlen(s) + 1;
+    char *dup = malloc(len);
+    if (dup) {
+        memcpy(dup, s, len);
+    }
+    return dup;
+}
+
 
 void trim_trailing_spaces(char *str) {
     size_t len = strlen(str);

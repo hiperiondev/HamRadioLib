@@ -54,6 +54,25 @@
 #define APRS_DTI_RESERVED_2 '"'                // Reserved (non-standard)
 
 /**
+ * @brief Structure for APRS Base91 compressed position report.
+ *
+ * This structure holds data for a Base91 compressed position report, including position, speed, course, altitude, and symbol.
+ */
+typedef struct {
+    double latitude;      ///< Latitude in decimal degrees (-90 to 90).
+    double longitude;     ///< Longitude in decimal degrees (-180 to 180).
+    int speed;            ///< Speed in knots (0-1943), or -1 if not available.
+    int course;           ///< Course in degrees (0-360), or -1 if not available.
+    int altitude;         ///< Altitude in feet, or INT_MIN if not available.
+    char symbol_table;    ///< Symbol table identifier ('/' or '\').
+    char symbol_code;     ///< Symbol code (printable ASCII).
+    char *comment;        ///< Optional comment field, null-terminated.
+    char dti;             ///< Data Type Indicator ('!' or '=' for compressed reports).
+    bool has_course_speed; ///< Flag indicating if course and speed are included.
+    bool has_altitude;    ///< Flag indicating if altitude is included.
+} aprs_compressed_position_t;
+
+/**
  * @brief Structure to represent an AX.25 frame for APRS packets.
  *
  * This structure contains the source, destination, digipeater path, and information field of an APRS packet.
@@ -776,5 +795,48 @@ int aprs_decode_df_report(const char *info, aprs_df_report_t *data);
  * @see aprs_encode_test_packet
  */
 int aprs_decode_test_packet(const char *info, aprs_test_packet_t *data);
+
+/**
+ * @brief Encode an APRS Base91 compressed position report.
+ *
+ * This function encodes a compressed position report using Base91 encoding into the information field.
+ * The compressed format is: DTI + 4-char lat + 4-char lon + symbol + 2-char data + compression_type + comment
+ *
+ * @param info Output buffer for the information field.
+ * @param len Size of the output buffer.
+ * @param data Pointer to the compressed position data structure.
+ * @return Number of bytes written to the buffer, or -1 on error.
+ */
+int aprs_encode_compressed_position(char *info, size_t len, const aprs_compressed_position_t *data);
+
+/**
+ * @brief Decode an APRS Base91 compressed position report.
+ *
+ * This function decodes a Base91 compressed position report from the information field into a structure.
+ *
+ * @param info Input buffer containing the information field.
+ * @param data Pointer to the compressed position data structure to fill.
+ * @return 0 on success, -1 on error.
+ */
+int aprs_decode_compressed_position(const char *info, aprs_compressed_position_t *data);
+
+/**
+ * @brief Check if an APRS packet contains a compressed position.
+ *
+ * This function checks if the given APRS information field contains a Base91 compressed position.
+ *
+ * @param info Input buffer containing the information field.
+ * @return true if the packet contains a compressed position, false otherwise.
+ */
+bool aprs_is_compressed_position(const char *info);
+
+/**
+ * @brief Free memory allocated for compressed position structure.
+ *
+ * This function frees the dynamically allocated comment field in the compressed position structure.
+ *
+ * @param data Pointer to the compressed position data structure.
+ */
+void aprs_free_compressed_position(aprs_compressed_position_t *data);
 
 #endif /* APRS_H_ */
