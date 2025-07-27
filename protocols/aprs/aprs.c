@@ -1086,7 +1086,7 @@ int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data
         return -1; // Minimum length for DTI+TS+LAT+TABLE+LON+CODE
 
     // Initialize data
-    *data = (aprs_position_with_ts_t){0};
+    *data = (aprs_position_with_ts_t ) { 0 };
 
     // Extract DTI
     data->dti = info[0];
@@ -1102,15 +1102,15 @@ int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data
     }
 
     // Extract latitude (8 chars, e.g., 4903.50N)
-    char lat_str[9] = {0};
+    char lat_str[9] = { 0 };
     strncpy(lat_str, info + 8, 8);
     if (lat_str[7] != 'N' && lat_str[7] != 'S')
         return -1;
 
     // Parse latitude with improved precision
-    char deg_str[3] = {lat_str[0], lat_str[1], '\0'};
-    char min_str[3] = {lat_str[2], lat_str[3], '\0'};
-    char frac_str[3] = {lat_str[5], lat_str[6], '\0'};
+    char deg_str[3] = { lat_str[0], lat_str[1], '\0' };
+    char min_str[3] = { lat_str[2], lat_str[3], '\0' };
+    char frac_str[3] = { lat_str[5], lat_str[6], '\0' };
     double deg = atof(deg_str);
     double min = atof(min_str);
     double frac = atof(frac_str) / 100.0;
@@ -1124,15 +1124,15 @@ int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data
         return -1;
 
     // Extract longitude (9 chars, e.g., 07201.75W)
-    char lon_str[10] = {0};
+    char lon_str[10] = { 0 };
     strncpy(lon_str, info + 17, 9);
     if (lon_str[8] != 'E' && lon_str[8] != 'W')
         return -1;
 
     // Parse longitude with improved precision
-    char lon_deg_str[4] = {lon_str[0], lon_str[1], lon_str[2], '\0'};
-    char lon_min_str[3] = {lon_str[3], lon_str[4], '\0'};
-    char lon_frac_str[3] = {lon_str[6], lon_str[7], '\0'};
+    char lon_deg_str[4] = { lon_str[0], lon_str[1], lon_str[2], '\0' };
+    char lon_min_str[3] = { lon_str[3], lon_str[4], '\0' };
+    char lon_frac_str[3] = { lon_str[6], lon_str[7], '\0' };
     double lon_deg = atof(lon_deg_str);
     double lon_min = atof(lon_min_str);
     double lon_frac = atof(lon_frac_str) / 100.0;
@@ -1147,10 +1147,10 @@ int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data
 
     // Extract course/speed if present (e.g., 123/456)
     data->has_course_speed = false;
-    if (strlen(info) >= 34 && info[27] == '/' && isdigit(info[28]) && isdigit(info[29]) &&
-        isdigit(info[30]) && info[31] == '/' && isdigit(info[32]) && isdigit(info[33]) && isdigit(info[34])) {
-        char course_str[4] = {info[28], info[29], info[30], '\0'};
-        char speed_str[4] = {info[32], info[33], info[34], '\0'};
+    if (strlen(info) >= 34&& info[27] == '/' && isdigit(info[28]) && isdigit(info[29]) &&
+    isdigit(info[30]) && info[31] == '/' && isdigit(info[32]) && isdigit(info[33]) && isdigit(info[34])) {
+        char course_str[4] = { info[28], info[29], info[30], '\0' };
+        char speed_str[4] = { info[32], info[33], info[34], '\0' };
         data->course = atoi(course_str);
         data->speed = atoi(speed_str);
         data->has_course_speed = true;
@@ -1901,140 +1901,133 @@ static const char BASE91_CHARSET[] = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHI
 #define LON_SCALE 190463.0    // 91^4 / 4 for longitude scaling
 #define ALTITUDE_OFFSET 10000 // Offset for altitude encoding
 
-/**
- * Encode a 32-bit value to Base91 with specified length
- */
 static void encode_base91(uint32_t value, char *output, int length) {
-    int i;
-    for (i = length - 1; i >= 0; i--) {
+    for (int i = length - 1; i >= 0; i--) {
         output[i] = BASE91_CHARSET[value % BASE91_SIZE];
         value /= BASE91_SIZE;
     }
 }
 
-/**
- * Decode a Base91 string to a 32-bit value
- */
 static uint32_t decode_base91(const char *input, int length) {
-    uint32_t result = 0;
-    int i;
-
-    for (i = 0; i < length; i++) {
+    uint32_t value = 0;
+    for (int i = 0; i < length; i++) {
         const char *pos = strchr(BASE91_CHARSET, input[i]);
-        if (pos == NULL) {
-            return 0; // Invalid character
-        }
-        result = result * BASE91_SIZE + (pos - BASE91_CHARSET);
+        if (!pos)
+            return 0;  // invalid character returns 0
+        value = value * BASE91_SIZE + (pos - BASE91_CHARSET);
     }
-    return result;
+    return value;
 }
 
-/**
- * Encode latitude to 4-character Base91 string
- */
-static void encode_latitude(double latitude, char *output) {
-    if (latitude < -90.0 || latitude > 90.0) {
+static void encode_latitude(double lat, char *output) {
+    if (lat < -90.0 || lat > 90.0) {
         memset(output, BASE91_CHARSET[0], 4);
         return;
     }
-
-    uint32_t scaled = (uint32_t)round(LAT_SCALE * (90.0 - latitude));
-    if (scaled > 691574) scaled = 691574; // 91^4 - 1
-
+    // shift from [-90,90] to [0,180]
+    double scaled_double = (lat + 90.0) * 91.0 * 91.0 * 91.0 * 91.0 / 180.0;
+    uint32_t scaled = (uint32_t) (scaled_double + 0.5);
+    if (scaled > 91 * 91 * 91 * 91 - 1)
+        scaled = 91 * 91 * 91 * 91 - 1;
     encode_base91(scaled, output, 4);
 }
 
-/**
- * Decode 4-character Base91 string to latitude
- */
 static double decode_latitude(const char *input) {
     uint32_t decoded = decode_base91(input, 4);
-    return 90.0 - (decoded / LAT_SCALE);
+    return ((double) decoded * 180.0 / (double) (91 * 91 * 91 * 91 - 1)) - 90.0;
 }
 
-/**
- * Encode longitude to 4-character Base91 string
- */
-static void encode_longitude(double longitude, char *output) {
-    if (longitude < -180.0 || longitude > 180.0) {
+static void encode_longitude(double lon, char *output) {
+    if (lon < -180.0 || lon > 180.0) {
         memset(output, BASE91_CHARSET[0], 4);
         return;
     }
-
-    uint32_t scaled = (uint32_t)round(LON_SCALE * (180.0 + longitude));
-    if (scaled > 691574) scaled = 691574; // 91^4 - 1
-
+    // shift from [-180,180] to [0,360]
+    double scaled_double = (lon + 180.0) * 91.0 * 91.0 * 91.0 * 91.0 / 360.0;
+    uint32_t scaled = (uint32_t) (scaled_double + 0.5);
+    if (scaled > 91 * 91 * 91 * 91 - 1)
+        scaled = 91 * 91 * 91 * 91 - 1;
     encode_base91(scaled, output, 4);
 }
 
-/**
- * Decode 4-character Base91 string to longitude
- */
 static double decode_longitude(const char *input) {
     uint32_t decoded = decode_base91(input, 4);
-    return (decoded / LON_SCALE) - 180.0;
+    return ((double) decoded * 360.0 / (double) (91 * 91 * 91 * 91 - 1)) - 180.0;
 }
 
-/**
- * Encode course and speed to 2-character Base91 string
- */
 static void encode_course_speed(int course, int speed, char *output) {
-    if (course < 0 || course > 360 || speed < 0 || speed > 1943) {
+    if (course < 0 || course > 360 || speed < 0) {
+        // Invalid course or speed -> two spaces as per spec
         output[0] = ' ';
         output[1] = ' ';
         return;
     }
-
-    // Normalize course to 0-359
-    if (course == 360) course = 0;
-
-    uint32_t encoded = course * 1000 + speed + 1000;
-    if (encoded > 8280) encoded = 8280; // 91^2 - 1
-
-    encode_base91(encoded, output, 2);
+    // Normalize course (360 is treated as 0)
+    if (course == 360) {
+        course = 0;
+    }
+    // Course in 4-degree increments
+    int c = course / 4;
+    if (c > 89) {
+        c = 89;
+    }
+    // Compute s from speed: s = round(log(speed+1) / log(1.08))
+    double s_val = log((double)(speed + 1)) / log(1.08);
+    int s = (int)(s_val + 0.5);
+    if (s > 89) {
+        s = 89;
+    }
+    // Map to APRS Base91 characters (ASCII offset 33): BASE91_CHARSET[0] == '!'
+    output[0] = BASE91_CHARSET[c];
+    output[1] = BASE91_CHARSET[s];
 }
 
-/**
- * Decode 2-character Base91 string to course and speed
- */
 static void decode_course_speed(const char *input, int *course, int *speed) {
-    uint32_t decoded = decode_base91(input, 2);
-    if (decoded < 1000) {
+    // Check for blank (no data) or invalid
+    if (!input || input[0] == ' ' || input[1] == ' ') {
         *course = -1;
         *speed = -1;
         return;
     }
-
-    decoded -= 1000;
-    *course = decoded / 1000;
-    *speed = decoded % 1000;
-
-    if (*course > 360 || *speed > 1943) {
+    // Look up values c and s from the APRS Base91 alphabet
+    const char *p0 = strchr(BASE91_CHARSET, input[0]);
+    const char *p1 = strchr(BASE91_CHARSET, input[1]);
+    if (!p0 || !p1) {
         *course = -1;
         *speed = -1;
-    }
-}
-
-/**
- * Encode altitude to 2-character Base91 string
- */
-static void encode_altitude(int altitude, char *output) {
-    int offset_altitude = altitude + ALTITUDE_OFFSET;
-    if (offset_altitude < 0 || offset_altitude > 8280) {
-        output[0] = ' ';
-        output[1] = ' ';
         return;
     }
-
-    encode_base91((uint32_t)offset_altitude, output, 2);
+    int c = (int)(p0 - BASE91_CHARSET);
+    int s = (int)(p1 - BASE91_CHARSET);
+    // Validate ranges (spec allows c,s = 0..89)
+    if (c < 0 || c > 89 || s < 0 || s > 89) {
+        *course = -1;
+        *speed = -1;
+        return;
+    }
+    // Compute course = c * 4
+    *course = c * 4;
+    // Compute speed = round(1.08^s - 1)
+    double spd = pow(1.08, (double)s) - 1.0;
+    *speed = (int)(spd + 0.5);
+    // Normalize 360->0 (although c<=89 should not produce exactly 360)
+    if (*course == 360) {
+        *course = 0;
+    }
 }
 
-/**
- * Decode 2-character Base91 string to altitude
- */
+static void encode_altitude(int alt, char *output) {
+    if (alt <= 0) { output[0]=output[1]=' '; return; }
+    double cs = log(alt) / log(1.002);
+    uint32_t val = (uint32_t)(cs + 0.5);  // nearest integer exponent
+    if (val >= BASE91_SIZE*BASE91_SIZE) { output[0]=output[1]=' '; return; }
+    encode_base91(val, output, 2);
+}
+
 static int decode_altitude(const char *input) {
-    uint32_t decoded = decode_base91(input, 2);
-    return (int)decoded - ALTITUDE_OFFSET;
+    uint32_t cs = decode_base91(input, 2);
+    double altd = pow(1.002, (double)cs);
+    return (int)(altd + 0.5);
 }
 
 /**
@@ -2085,8 +2078,7 @@ int aprs_encode_compressed_position(char *info, size_t len, const aprs_compresse
     }
 
     // Validate input
-    if (data->latitude < -90.0 || data->latitude > 90.0 ||
-        data->longitude < -180.0 || data->longitude > 180.0) {
+    if (data->latitude < -90.0 || data->latitude > 90.0 || data->longitude < -180.0 || data->longitude > 180.0) {
         return -1;
     }
 
@@ -2132,12 +2124,9 @@ int aprs_encode_compressed_position(char *info, size_t len, const aprs_compresse
     compressed[pos] = '\0';
 
     // Assemble final packet
-    int written = snprintf(info, len, "%c%s%s",
-                          data->dti ? data->dti : APRS_DTI_POSITION_NO_TS_NO_MSG,
-                          compressed,
-                          data->comment ? data->comment : "");
+    int written = snprintf(info, len, "%c%s%s", data->dti ? data->dti : APRS_DTI_POSITION_NO_TS_NO_MSG, compressed, data->comment ? data->comment : "");
 
-    if (written >= (int)len) {
+    if (written >= (int) len) {
         return -1; // Buffer too small
     }
 
@@ -2159,10 +2148,8 @@ int aprs_decode_compressed_position(const char *info, aprs_compressed_position_t
     data->dti = info[0];
 
     // Validate DTI
-    if (data->dti != APRS_DTI_POSITION_NO_TS_NO_MSG &&
-        data->dti != APRS_DTI_POSITION_NO_TS_WITH_MSG &&
-        data->dti != APRS_DTI_POSITION_WITH_TS_NO_MSG &&
-        data->dti != APRS_DTI_POSITION_WITH_TS_WITH_MSG) {
+    if (data->dti != APRS_DTI_POSITION_NO_TS_NO_MSG && data->dti != APRS_DTI_POSITION_NO_TS_WITH_MSG && data->dti != APRS_DTI_POSITION_WITH_TS_NO_MSG
+            && data->dti != APRS_DTI_POSITION_WITH_TS_WITH_MSG) {
         return -1;
     }
 
@@ -2226,10 +2213,8 @@ bool aprs_is_compressed_position(const char *info) {
     }
 
     char dti = info[0];
-    if (dti != APRS_DTI_POSITION_NO_TS_NO_MSG &&
-        dti != APRS_DTI_POSITION_NO_TS_WITH_MSG &&
-        dti != APRS_DTI_POSITION_WITH_TS_NO_MSG &&
-        dti != APRS_DTI_POSITION_WITH_TS_WITH_MSG) {
+    if (dti != APRS_DTI_POSITION_NO_TS_NO_MSG && dti != APRS_DTI_POSITION_NO_TS_WITH_MSG && dti != APRS_DTI_POSITION_WITH_TS_NO_MSG
+            && dti != APRS_DTI_POSITION_WITH_TS_WITH_MSG) {
         return false;
     }
 

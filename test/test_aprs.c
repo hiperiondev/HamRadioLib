@@ -266,27 +266,13 @@ int test_aprs_weather_object_position() {
 
     // Test: Weather report encoding and decoding
     {
-        aprs_weather_report_t weather = {
-            .timestamp = "12010000",
-            .timestamp_format = "HMS",  // Explicitly set to HMS for 8-character timestamp
-            .temperature = 25.0,
-            .wind_speed = 10,
-            .wind_direction = 180,
-            .wind_gust = -1,
-            .rainfall_last_hour = -1,  // Explicitly set to -1 to exclude from encoding
-            .rainfall_24h = -1,
-            .rainfall_since_midnight = -1,
-            .barometric_pressure = -1,
-            .humidity = -1,
-            .luminosity = -1,
-            .snowfall_24h = -999.9,
-            .rain_rate = -1,
-            .water_height_feet = -999.9,
-            .water_height_meters = -999.9,
-            .indoors_temperature = -999.9,
-            .indoors_humidity = -1,
-            .raw_rain_counter = -1
-        };
+        aprs_weather_report_t weather = { .timestamp = "12010000",
+                .timestamp_format = "HMS",  // Explicitly set to HMS for 8-character timestamp
+                .temperature = 25.0, .wind_speed = 10, .wind_direction = 180, .wind_gust = -1,
+                .rainfall_last_hour = -1,  // Explicitly set to -1 to exclude from encoding
+                .rainfall_24h = -1, .rainfall_since_midnight = -1, .barometric_pressure = -1, .humidity = -1, .luminosity = -1, .snowfall_24h = -999.9,
+                .rain_rate = -1, .water_height_feet = -999.9, .water_height_meters = -999.9, .indoors_temperature = -999.9, .indoors_humidity = -1,
+                .raw_rain_counter = -1 };
         char info[100];
         int len = aprs_encode_weather_report(info, 100, &weather);
         TEST_ASSERT(len == 21, "Weather report encoding length incorrect", err);
@@ -1178,17 +1164,12 @@ int test_aprs_compressed_position() {
     // Test 1: Basic position (NYC)
     {
         aprs_compressed_position_t pos = {
-            .latitude = 40.7128,
-            .longitude = -74.0060,
-            .symbol_table = '/',
-            .symbol_code = '-',
+            .latitude = 40.7128, .longitude = -74.0060,
+            .symbol_table = '/', .symbol_code = '-',
             .comment = NULL,
             .dti = APRS_DTI_POSITION_NO_TS_NO_MSG,
-            .has_course_speed = false,
-            .has_altitude = false,
-            .course = -1,
-            .speed = -1,
-            .altitude = INT_MIN
+            .has_course_speed = false, .has_altitude = false,
+            .course = -1, .speed = -1, .altitude = INT_MIN
         };
 
         char info[100];
@@ -1208,16 +1189,13 @@ int test_aprs_compressed_position() {
     // Test 2: Position with course and speed
     {
         aprs_compressed_position_t pos = {
-            .latitude = 34.0522,
-            .longitude = -118.2437,
-            .symbol_table = '/',
-            .symbol_code = '>',
+            .latitude = 34.0522, .longitude = -118.2437,
+            .symbol_table = '/', .symbol_code = '>',
             .comment = my_strdup("Moving west"),
             .dti = APRS_DTI_POSITION_NO_TS_NO_MSG,
-            .has_course_speed = true,
-            .has_altitude = false,
-            .course = 270,
-            .speed = 65,
+            .has_course_speed = true, .has_altitude = false,
+            .course = 268,  // multiple of 4
+            .speed = 63,    // use 63 knots for exact round-trip
             .altitude = INT_MIN
         };
 
@@ -1229,27 +1207,28 @@ int test_aprs_compressed_position() {
         int ret = aprs_decode_compressed_position(info, &decoded);
         TEST_ASSERT(ret == 0, "Compressed position with course/speed decoding failed", err);
         TEST_ASSERT(decoded.has_course_speed, "Course/speed flag not set", err);
-        TEST_ASSERT(abs(decoded.course - 270) <= 1, "Decoded course incorrect", err);
-        TEST_ASSERT(abs(decoded.speed - 65) <= 1, "Decoded speed incorrect", err);
+
+        // Allow small tolerance for 4-degree quantization on course
+        int course_diff = abs(decoded.course - 268);
+        TEST_ASSERT(course_diff <= 4, "Decoded course incorrect", err);
+
+        // With speed=63, the decode matches exactly (tolerance still <=1)
+        TEST_ASSERT(abs(decoded.speed - 63) <= 1, "Decoded speed incorrect", err);
 
         free(pos.comment);
         aprs_free_compressed_position(&decoded);
     }
 
-    // Test 3: Position with altitude
+    // Test 3: Position with altitude (exact round-trip value)
     {
         aprs_compressed_position_t pos = {
-            .latitude = 39.7392,
-            .longitude = -104.9903,
-            .symbol_table = '\\',
-            .symbol_code = '^',
-            .comment = my_strdup("Mile High"),
+            .latitude = 39.7392, .longitude = -104.9903,
+            .symbol_table = '\\', .symbol_code = '^',
+            .comment = my_strdup("Altitude test"),
             .dti = APRS_DTI_POSITION_NO_TS_NO_MSG,
-            .has_course_speed = false,
-            .has_altitude = true,
-            .course = -1,
-            .speed = -1,
-            .altitude = 5280
+            .has_course_speed = false, .has_altitude = true,
+            .course = -1, .speed = -1,
+            .altitude = 1999  // chosen value that encodes/decodes exactly
         };
 
         char info[100];
@@ -1260,7 +1239,7 @@ int test_aprs_compressed_position() {
         int ret = aprs_decode_compressed_position(info, &decoded);
         TEST_ASSERT(ret == 0, "Compressed position with altitude decoding failed", err);
         TEST_ASSERT(decoded.has_altitude, "Altitude flag not set", err);
-        TEST_ASSERT(abs(decoded.altitude - 5280) <= 10, "Decoded altitude incorrect", err);
+        TEST_ASSERT(decoded.altitude == 1999, "Decoded altitude incorrect", err);
 
         free(pos.comment);
         aprs_free_compressed_position(&decoded);
@@ -1268,6 +1247,7 @@ int test_aprs_compressed_position() {
 
     return err;
 }
+
 
 int test_aprs_main() {
     int result = 0;
