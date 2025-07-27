@@ -26,6 +26,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#define APRS_COMMENT_LEN 100
+
 // Data Type Identifiers (DTIs) for APRS packets
 #define APRS_DTI_POSITION_NO_TS_NO_MSG '!'     // Position without timestamp (no messaging)
 #define APRS_DTI_POSITION_NO_TS_WITH_MSG '='   // Position without timestamp (with messaging)
@@ -147,6 +149,9 @@ typedef struct {
     float indoors_temperature;
     int indoors_humidity;
     int raw_rain_counter;
+    int rain_1h;          // Rain in last hour
+    int rain_24h;         // Rain in last 24 hours
+    int rain_midnight;    // Rain since midnight
 } aprs_weather_report_t;
 
 /**
@@ -838,5 +843,11 @@ bool aprs_is_compressed_position(const char *info);
  * @param data Pointer to the compressed position data structure.
  */
 void aprs_free_compressed_position(aprs_compressed_position_t *data);
+
+int aprs_decode_peet1(const char *info, aprs_weather_report_t *data);
+int aprs_decode_peet2(const char *info, aprs_weather_report_t *data);
+int aprs_encode_peet1(char *dst, int len, const aprs_weather_report_t *data);
+int aprs_encode_peet2(char *dst, int len, const aprs_weather_report_t *data);
+int aprs_decode_position_weather(const aprs_position_no_ts_t *pos, aprs_weather_report_t *w);
 
 #endif /* APRS_H_ */

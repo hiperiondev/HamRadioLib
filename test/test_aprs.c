@@ -1163,14 +1163,8 @@ int test_aprs_compressed_position() {
 
     // Test 1: Basic position (NYC)
     {
-        aprs_compressed_position_t pos = {
-            .latitude = 40.7128, .longitude = -74.0060,
-            .symbol_table = '/', .symbol_code = '-',
-            .comment = NULL,
-            .dti = APRS_DTI_POSITION_NO_TS_NO_MSG,
-            .has_course_speed = false, .has_altitude = false,
-            .course = -1, .speed = -1, .altitude = INT_MIN
-        };
+        aprs_compressed_position_t pos = { .latitude = 40.7128, .longitude = -74.0060, .symbol_table = '/', .symbol_code = '-', .comment = NULL, .dti =
+        APRS_DTI_POSITION_NO_TS_NO_MSG, .has_course_speed = false, .has_altitude = false, .course = -1, .speed = -1, .altitude = INT_MIN };
 
         char info[100];
         int len = aprs_encode_compressed_position(info, sizeof(info), &pos);
@@ -1188,16 +1182,10 @@ int test_aprs_compressed_position() {
 
     // Test 2: Position with course and speed
     {
-        aprs_compressed_position_t pos = {
-            .latitude = 34.0522, .longitude = -118.2437,
-            .symbol_table = '/', .symbol_code = '>',
-            .comment = my_strdup("Moving west"),
-            .dti = APRS_DTI_POSITION_NO_TS_NO_MSG,
-            .has_course_speed = true, .has_altitude = false,
-            .course = 268,  // multiple of 4
-            .speed = 63,    // use 63 knots for exact round-trip
-            .altitude = INT_MIN
-        };
+        aprs_compressed_position_t pos = { .latitude = 34.0522, .longitude = -118.2437, .symbol_table = '/', .symbol_code = '>', .comment = my_strdup(
+                "Moving west"), .dti = APRS_DTI_POSITION_NO_TS_NO_MSG, .has_course_speed = true, .has_altitude = false, .course = 268,  // multiple of 4
+                .speed = 63,    // use 63 knots for exact round-trip
+                .altitude = INT_MIN };
 
         char info[100];
         int len = aprs_encode_compressed_position(info, sizeof(info), &pos);
@@ -1221,15 +1209,10 @@ int test_aprs_compressed_position() {
 
     // Test 3: Position with altitude (exact round-trip value)
     {
-        aprs_compressed_position_t pos = {
-            .latitude = 39.7392, .longitude = -104.9903,
-            .symbol_table = '\\', .symbol_code = '^',
-            .comment = my_strdup("Altitude test"),
-            .dti = APRS_DTI_POSITION_NO_TS_NO_MSG,
-            .has_course_speed = false, .has_altitude = true,
-            .course = -1, .speed = -1,
-            .altitude = 1999  // chosen value that encodes/decodes exactly
-        };
+        aprs_compressed_position_t pos = { .latitude = 39.7392, .longitude = -104.9903, .symbol_table = '\\', .symbol_code = '^', .comment = my_strdup(
+                "Altitude test"), .dti = APRS_DTI_POSITION_NO_TS_NO_MSG, .has_course_speed = false, .has_altitude = true, .course = -1, .speed = -1, .altitude =
+                1999  // chosen value that encodes/decodes exactly
+                };
 
         char info[100];
         int len = aprs_encode_compressed_position(info, sizeof(info), &pos);
@@ -1246,6 +1229,72 @@ int test_aprs_compressed_position() {
     }
 
     return err;
+}
+
+int test_aprs_weather_extensions(void) {
+    printf("test_aprs_weather_extensions\n");
+    aprs_weather_report_t input = {
+        .wind_direction = 360,
+        .wind_speed = 4,
+        .wind_gust = 15,
+        .temperature = 71,
+        .rain_1h = 0,
+        .rain_24h = 33,
+        .rain_midnight = 2,
+        .humidity = 54,
+        .barometric_pressure = 10001
+    };
+
+    char encoded[128];
+    int encoded_len = aprs_encode_peet1(encoded, sizeof(encoded), &input);
+    TEST_ASSERT(encoded_len > 0, "Encoding Peet Bros #W1", 1);
+
+    const char expected[] = "#W1c360s004g015t071r000p033P002h54b10001";
+    COMPARE_FRAME(encoded, (size_t)encoded_len, expected, (size_t)strlen(expected), "Encoded Peet #W1 matches expected");
+
+    aprs_weather_report_t decoded = {0};
+    int r = aprs_decode_peet1(encoded, &decoded);
+    TEST_ASSERT(r == 0, "Decoding Peet Bros #W1", 2);
+
+    TEST_ASSERT(decoded.wind_direction == 360, "Wind direction == 360", 3);
+    TEST_ASSERT(decoded.wind_speed == 4, "Wind speed == 4", 4);
+    TEST_ASSERT(decoded.wind_gust == 15, "Wind gust == 15", 5);
+    TEST_ASSERT(decoded.temperature == 71, "Temperature == 71", 6);
+    TEST_ASSERT(decoded.rain_1h == 0, "Rain 1h == 0", 7);
+    TEST_ASSERT(decoded.rain_24h == 33, "Rain 24h == 33", 8);
+    TEST_ASSERT(decoded.rain_midnight == 2, "Rain since midnight == 2", 9);
+    TEST_ASSERT(decoded.humidity == 54, "Humidity == 54", 10);
+    TEST_ASSERT(decoded.barometric_pressure == 10001, "Pressure == 10001", 11);
+
+    // Test decode from position-carrying weather
+    aprs_position_no_ts_t pos = {
+        .latitude = 42.0,
+        .longitude = -71.0,
+        .symbol_table = '/',
+        .symbol_code = '_',
+        .has_course_speed = 1,
+        .course = 180,
+        .speed = 5,
+    };
+
+    static char comment_buf[100];
+    snprintf(comment_buf, sizeof(comment_buf), "c360s004t071g015r000p033P002h54b10001");
+    pos.comment = comment_buf;
+
+    aprs_weather_report_t extracted = {0};
+    TEST_ASSERT(aprs_decode_position_weather(&pos, &extracted) == 0, "Decode position-carrying weather", 12);
+
+    TEST_ASSERT(extracted.wind_direction == 360, "Extracted wind dir == 360", 13);
+    TEST_ASSERT(extracted.wind_speed == 4, "Extracted wind speed == 4", 14);
+    TEST_ASSERT(extracted.wind_gust == 15, "Extracted wind gust == 15", 15);
+    TEST_ASSERT(extracted.temperature == 71, "Extracted temp == 71", 16);
+    TEST_ASSERT(extracted.rain_1h == 0, "Extracted rain 1h == 0", 17);
+    TEST_ASSERT(extracted.rain_24h == 33, "Extracted rain 24h == 33", 18);
+    TEST_ASSERT(extracted.rain_midnight == 2, "Extracted rain midnight == 2", 19);
+    TEST_ASSERT(extracted.humidity == 54, "Extracted humidity == 54", 20);
+    TEST_ASSERT(extracted.barometric_pressure == 10001, "Extracted pressure == 10001", 21);
+
+    return 0;
 }
 
 
@@ -1275,6 +1324,7 @@ int test_aprs_main() {
     result |= test_aprs_df_report();
     result |= test_aprs_test_packet();
     result |= test_aprs_compressed_position();
+    result |= test_aprs_weather_extensions();
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Tests APRS Completed. %s\n", result == 0 ? "All tests passed" : "Some tests failed");
     printf("----------------------------------------------------------------------------------\n\n");

@@ -30,6 +30,15 @@
 #include "common.h"
 #include "aprs.h"
 
+// Constants for Base91 compression
+#define BASE91_SIZE 91
+#define LAT_SCALE 380926.0    // 91^4 / 2 for latitude scaling
+#define LON_SCALE 190463.0    // 91^4 / 4 for longitude scaling
+#define ALTITUDE_OFFSET 10000 // Offset for altitude encoding
+
+// Base91 character set for APRS compression
+static const char BASE91_CHARSET[] = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+
 /**
  * Custom strndup implementation for C99.
  * @param s String to duplicate
@@ -1892,15 +1901,6 @@ int aprs_decode_test_packet(const char *info, aprs_test_packet_t *data) {
     return 0;
 }
 
-// Base91 character set for APRS compression
-static const char BASE91_CHARSET[] = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
-
-// Constants for Base91 compression
-#define BASE91_SIZE 91
-#define LAT_SCALE 380926.0    // 91^4 / 2 for latitude scaling
-#define LON_SCALE 190463.0    // 91^4 / 4 for longitude scaling
-#define ALTITUDE_OFFSET 10000 // Offset for altitude encoding
-
 static void encode_base91(uint32_t value, char *output, int length) {
     for (int i = length - 1; i >= 0; i--) {
         output[i] = BASE91_CHARSET[value % BASE91_SIZE];
@@ -1972,8 +1972,8 @@ static void encode_course_speed(int course, int speed, char *output) {
         c = 89;
     }
     // Compute s from speed: s = round(log(speed+1) / log(1.08))
-    double s_val = log((double)(speed + 1)) / log(1.08);
-    int s = (int)(s_val + 0.5);
+    double s_val = log((double) (speed + 1)) / log(1.08);
+    int s = (int) (s_val + 0.5);
     if (s > 89) {
         s = 89;
     }
@@ -1997,8 +1997,8 @@ static void decode_course_speed(const char *input, int *course, int *speed) {
         *speed = -1;
         return;
     }
-    int c = (int)(p0 - BASE91_CHARSET);
-    int s = (int)(p1 - BASE91_CHARSET);
+    int c = (int) (p0 - BASE91_CHARSET);
+    int s = (int) (p1 - BASE91_CHARSET);
     // Validate ranges (spec allows c,s = 0..89)
     if (c < 0 || c > 89 || s < 0 || s > 89) {
         *course = -1;
@@ -2008,8 +2008,8 @@ static void decode_course_speed(const char *input, int *course, int *speed) {
     // Compute course = c * 4
     *course = c * 4;
     // Compute speed = round(1.08^s - 1)
-    double spd = pow(1.08, (double)s) - 1.0;
-    *speed = (int)(spd + 0.5);
+    double spd = pow(1.08, (double) s) - 1.0;
+    *speed = (int) (spd + 0.5);
     // Normalize 360->0 (although c<=89 should not produce exactly 360)
     if (*course == 360) {
         *course = 0;
@@ -2017,17 +2017,23 @@ static void decode_course_speed(const char *input, int *course, int *speed) {
 }
 
 static void encode_altitude(int alt, char *output) {
-    if (alt <= 0) { output[0]=output[1]=' '; return; }
+    if (alt <= 0) {
+        output[0] = output[1] = ' ';
+        return;
+    }
     double cs = log(alt) / log(1.002);
-    uint32_t val = (uint32_t)(cs + 0.5);  // nearest integer exponent
-    if (val >= BASE91_SIZE*BASE91_SIZE) { output[0]=output[1]=' '; return; }
+    uint32_t val = (uint32_t) (cs + 0.5);  // nearest integer exponent
+    if (val >= BASE91_SIZE * BASE91_SIZE) {
+        output[0] = output[1] = ' ';
+        return;
+    }
     encode_base91(val, output, 2);
 }
 
 static int decode_altitude(const char *input) {
     uint32_t cs = decode_base91(input, 2);
-    double altd = pow(1.002, (double)cs);
-    return (int)(altd + 0.5);
+    double altd = pow(1.002, (double) cs);
+    return (int) (altd + 0.5);
 }
 
 /**
@@ -2228,4 +2234,76 @@ void aprs_free_compressed_position(aprs_compressed_position_t *data) {
         free(data->comment);
         data->comment = NULL;
     }
+}
+
+/* Internal helper for parsing fixed-width numeric field */
+static int parse_fixed_int(const char *s, int len) {
+    char buf[8];
+    if (len >= (int)sizeof(buf)) return -1;
+    memcpy(buf, s, len);
+    buf[len] = '\0';
+    return atoi(buf);
+}
+
+int aprs_decode_peet1(const char *info, aprs_weather_report_t *data) {
+    if (strncmp(info, "#W1", 3) != 0) return -1;
+    info += 3;
+    memset(data, 0, sizeof(*data));
+
+    while (*info) {
+        if (info[0] == 'c') data->wind_direction = parse_fixed_int(info + 1, 3);
+        else if (info[0] == 's') data->wind_speed = parse_fixed_int(info + 1, 3);
+        else if (info[0] == 'g') data->wind_gust = parse_fixed_int(info + 1, 3);
+        else if (info[0] == 't') data->temperature = (float)parse_fixed_int(info + 1, 3);
+        else if (info[0] == 'r') data->rain_1h = parse_fixed_int(info + 1, 3);
+        else if (info[0] == 'p') data->rain_24h = parse_fixed_int(info + 1, 3);
+        else if (info[0] == 'P') data->rain_midnight = parse_fixed_int(info + 1, 3);
+        else if (info[0] == 'h') data->humidity = parse_fixed_int(info + 1, 2);
+        else if (info[0] == 'b') data->barometric_pressure = parse_fixed_int(info + 1, 5);
+        info += (info[0] == 'h') ? 3 : (info[0] == 'b') ? 6 : 4;
+    }
+    return 0;
+}
+
+int aprs_decode_peet2(const char *info, aprs_weather_report_t *data) {
+    if (strncmp(info, "*W2", 3) != 0) return -1;
+    return aprs_decode_peet1(info + 1, data);
+}
+
+int aprs_encode_peet1(char *dst, int len, const aprs_weather_report_t *data) {
+    return snprintf(dst, len, "#W1c%03ds%03dg%03dt%03dr%03dp%03dP%03dh%02db%05d",
+        data->wind_direction,
+        data->wind_speed,
+        data->wind_gust,
+        (int)data->temperature,
+        data->rain_1h,
+        data->rain_24h,
+        data->rain_midnight,
+        data->humidity,
+        data->barometric_pressure);
+}
+
+
+int aprs_encode_peet2(char *dst, int len, const aprs_weather_report_t *data) {
+    int r = aprs_encode_peet1(dst + 1, len - 1, data);
+    if (r <= 0) return -1;
+    dst[0] = '*';
+    return r + 1;
+}
+
+int aprs_decode_position_weather(const aprs_position_no_ts_t *pos,
+                                 aprs_weather_report_t *w) {
+    if (pos->symbol_code != '_') {
+        return -1;  // Not a weather-bearing position report
+    }
+    if (!pos->comment) {
+        return -1;
+    }
+    // Prepend the "#W1" header (Peet Bros format 1) to parse the fields
+    char buf[APRS_COMMENT_LEN + 4];
+    int n = snprintf(buf, sizeof(buf), "#W1%s", pos->comment);
+    if (n < 0 || (size_t)n >= sizeof(buf)) {
+        return -1;  // Encoding error or buffer overflow
+    }
+    return aprs_decode_peet1(buf, w);
 }
