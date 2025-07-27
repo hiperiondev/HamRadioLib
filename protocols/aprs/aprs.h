@@ -184,6 +184,7 @@ typedef struct {
     double longitude;     ///< Longitude in decimal degrees (-180 to 180).
     char symbol_table;    ///< Symbol table identifier ('/' or '\').
     char symbol_code;     ///< Symbol code (printable ASCII).
+    bool killed;           // false = live (*), true = killed (_)
 } aprs_object_report_t;
 
 /**
@@ -265,6 +266,8 @@ typedef struct {
     char symbol_table;    ///< Symbol table identifier ('/' or '\').
     char symbol_code;     ///< Symbol code (printable ASCII).
     char *comment;        ///< Optional comment field, null-terminated.
+    bool killed;           // false = live (*), true = killed (_)
+    char timestamp[8];     // DDHHMM[z|l] + NULL
 } aprs_item_report_t;
 
 typedef struct {
