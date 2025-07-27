@@ -30,6 +30,10 @@
 #include "common.h"
 #include "aprs.h"
 
+#ifndef M_PI
+#define M_PI 3.1415926535897932384626433832
+#endif
+
 // Constants for Base91 compression
 #define BASE91_SIZE 91
 #define LAT_SCALE 380926.0    // 91^4 / 2 for latitude scaling
@@ -2239,60 +2243,63 @@ void aprs_free_compressed_position(aprs_compressed_position_t *data) {
 /* Internal helper for parsing fixed-width numeric field */
 static int parse_fixed_int(const char *s, int len) {
     char buf[8];
-    if (len >= (int)sizeof(buf)) return -1;
+    if (len >= (int) sizeof(buf))
+        return -1;
     memcpy(buf, s, len);
     buf[len] = '\0';
     return atoi(buf);
 }
 
 int aprs_decode_peet1(const char *info, aprs_weather_report_t *data) {
-    if (strncmp(info, "#W1", 3) != 0) return -1;
+    if (strncmp(info, "#W1", 3) != 0)
+        return -1;
     info += 3;
     memset(data, 0, sizeof(*data));
 
     while (*info) {
-        if (info[0] == 'c') data->wind_direction = parse_fixed_int(info + 1, 3);
-        else if (info[0] == 's') data->wind_speed = parse_fixed_int(info + 1, 3);
-        else if (info[0] == 'g') data->wind_gust = parse_fixed_int(info + 1, 3);
-        else if (info[0] == 't') data->temperature = (float)parse_fixed_int(info + 1, 3);
-        else if (info[0] == 'r') data->rain_1h = parse_fixed_int(info + 1, 3);
-        else if (info[0] == 'p') data->rain_24h = parse_fixed_int(info + 1, 3);
-        else if (info[0] == 'P') data->rain_midnight = parse_fixed_int(info + 1, 3);
-        else if (info[0] == 'h') data->humidity = parse_fixed_int(info + 1, 2);
-        else if (info[0] == 'b') data->barometric_pressure = parse_fixed_int(info + 1, 5);
+        if (info[0] == 'c')
+            data->wind_direction = parse_fixed_int(info + 1, 3);
+        else if (info[0] == 's')
+            data->wind_speed = parse_fixed_int(info + 1, 3);
+        else if (info[0] == 'g')
+            data->wind_gust = parse_fixed_int(info + 1, 3);
+        else if (info[0] == 't')
+            data->temperature = (float) parse_fixed_int(info + 1, 3);
+        else if (info[0] == 'r')
+            data->rain_1h = parse_fixed_int(info + 1, 3);
+        else if (info[0] == 'p')
+            data->rain_24h = parse_fixed_int(info + 1, 3);
+        else if (info[0] == 'P')
+            data->rain_midnight = parse_fixed_int(info + 1, 3);
+        else if (info[0] == 'h')
+            data->humidity = parse_fixed_int(info + 1, 2);
+        else if (info[0] == 'b')
+            data->barometric_pressure = parse_fixed_int(info + 1, 5);
         info += (info[0] == 'h') ? 3 : (info[0] == 'b') ? 6 : 4;
     }
     return 0;
 }
 
 int aprs_decode_peet2(const char *info, aprs_weather_report_t *data) {
-    if (strncmp(info, "*W2", 3) != 0) return -1;
+    if (strncmp(info, "*W2", 3) != 0)
+        return -1;
     return aprs_decode_peet1(info + 1, data);
 }
 
 int aprs_encode_peet1(char *dst, int len, const aprs_weather_report_t *data) {
-    return snprintf(dst, len, "#W1c%03ds%03dg%03dt%03dr%03dp%03dP%03dh%02db%05d",
-        data->wind_direction,
-        data->wind_speed,
-        data->wind_gust,
-        (int)data->temperature,
-        data->rain_1h,
-        data->rain_24h,
-        data->rain_midnight,
-        data->humidity,
-        data->barometric_pressure);
+    return snprintf(dst, len, "#W1c%03ds%03dg%03dt%03dr%03dp%03dP%03dh%02db%05d", data->wind_direction, data->wind_speed, data->wind_gust,
+            (int) data->temperature, data->rain_1h, data->rain_24h, data->rain_midnight, data->humidity, data->barometric_pressure);
 }
-
 
 int aprs_encode_peet2(char *dst, int len, const aprs_weather_report_t *data) {
     int r = aprs_encode_peet1(dst + 1, len - 1, data);
-    if (r <= 0) return -1;
+    if (r <= 0)
+        return -1;
     dst[0] = '*';
     return r + 1;
 }
 
-int aprs_decode_position_weather(const aprs_position_no_ts_t *pos,
-                                 aprs_weather_report_t *w) {
+int aprs_decode_position_weather(const aprs_position_no_ts_t *pos, aprs_weather_report_t *w) {
     if (pos->symbol_code != '_') {
         return -1;  // Not a weather-bearing position report
     }
@@ -2302,8 +2309,128 @@ int aprs_decode_position_weather(const aprs_position_no_ts_t *pos,
     // Prepend the "#W1" header (Peet Bros format 1) to parse the fields
     char buf[APRS_COMMENT_LEN + 4];
     int n = snprintf(buf, sizeof(buf), "#W1%s", pos->comment);
-    if (n < 0 || (size_t)n >= sizeof(buf)) {
+    if (n < 0 || (size_t) n >= sizeof(buf)) {
         return -1;  // Encoding error or buffer overflow
     }
     return aprs_decode_peet1(buf, w);
+}
+
+/* Helper: compute great-circle distance (km) between two lat/lon points */
+static double haversine_km(double lat1, double lon1, double lat2, double lon2) {
+    const double R = 6371.0; // Earth radius in km
+    double dlat = (lat2 - lat1) * M_PI / 180.0;
+    double dlon = (lon2 - lon1) * M_PI / 180.0;
+    double a = sin(dlat / 2) * sin(dlat / 2) + cos(lat1 * M_PI / 180.0) * cos(lat2 * M_PI / 180.0) * sin(dlon / 2) * sin(dlon / 2);
+    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return R * c;
+}
+
+/**
+ * @brief Handle a directed station query and generate an APRS response info field.
+ * @param msg      Decoded incoming message (must be an APRS message to local station).
+ * @param info     Output buffer for the response info field.
+ * @param len      Size of the output buffer.
+ * @return Length of response info written, or 0 if no response, or -1 on error.
+ *
+ * This function checks if *msg* is a directed query to local_station.callsign.
+ * If so, it extracts the query type (between '?' marks) and builds the
+ * appropriate response in *info*.  Responses may use aprs_encode_* functions.
+ * For example:
+ *   ?APRS? -> software_version string (no DTI prefix).
+ *   ?INFO? -> status text (with '>' prefix via aprs_encode_status).
+ *   ?LOC? -> position report via aprs_encode_position_no_ts.
+ *   ?TIME? -> timestamp via aprs_encode_status with has_timestamp.
+ *   ?WX? -> weather report via aprs_encode_weather_report (not shown).
+ *   ?MSG? -> messaging support text.
+ *   ?DST? -> distance to configured dest (if has_dest).
+ * Supported query types are case-sensitive (uppercase).
+ * The incoming *msg.addressee* must match local station (trailing spaces trimmed).
+ */
+int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len, aprs_station_info_t local_station) {
+    if (!msg || !info)
+        return -1;
+    // Check address matches local callsign (trim trailing spaces)
+    char dest[10];
+    strncpy(dest, msg->addressee, 9);
+    dest[9] = '\0';
+    // Trim trailing spaces
+    for (int i = strlen(dest) - 1; i >= 0 && dest[i] == ' '; i--)
+        dest[i] = '\0';
+    if (strcmp(dest, local_station.callsign) != 0) {
+        return 0; // Not addressed to us
+    }
+    // Message text must start and end with '?'
+    const char *text = msg->message;
+    size_t tlen = strlen(text);
+    if (tlen < 3 || text[0] != '?' || text[tlen - 1] != '?') {
+        return 0; // Not a valid query
+    }
+    // Extract query type (between '?')
+    char qtype[12];
+    size_t type_len = tlen - 2;
+    if (type_len >= sizeof(qtype))
+        type_len = sizeof(qtype) - 1;
+    memcpy(qtype, text + 1, type_len);
+    qtype[type_len] = '\0';
+
+    // Handle each supported query type
+    if (strcmp(qtype, "APRS") == 0) {
+        // Respond with software version string (no prefix)
+        size_t outlen = strlen(local_station.software_version);
+        if (outlen >= len)
+            return -1;
+        memcpy(info, local_station.software_version, outlen);
+        info[outlen] = '\0';
+        return (int) outlen;
+    } else if (strcmp(qtype, "INFO") == 0) {
+        // Respond with status text (with '>' prefix)
+        aprs_status_t st = { .has_timestamp = false };
+        memcpy(st.status_text, local_station.status_text, sizeof(st.status_text) - 1);
+        st.status_text[sizeof(st.status_text) - 1] = '\0';  // ensure null termination
+        return aprs_encode_status(info, len, &st);
+    } else if (strcmp(qtype, "LOC") == 0) {
+        // Respond with current position (no timestamp)
+        aprs_position_no_ts_t pos = { .latitude = local_station.latitude, .longitude = local_station.longitude, .symbol_table = local_station.symbol_table,
+                .symbol_code = local_station.symbol_code, .comment = NULL, .dti = '!' };
+        return aprs_encode_position_no_ts(info, len, &pos);
+    } else if (strcmp(qtype, "TIME") == 0) {
+        // Respond with the last beacon time (use status with timestamp)
+        aprs_status_t st = { .has_timestamp = true };
+        memcpy(st.timestamp, local_station.timestamp, 7);
+        st.status_text[0] = '\0';
+        return aprs_encode_status(info, len, &st);
+    } else if (strcmp(qtype, "WX") == 0) {
+        // (Optional) Weather data if available; here we send a dummy weather report
+        static aprs_weather_report_t wx = { .timestamp = "000000z", .wind_direction = 90, .wind_speed = 5, .temperature = 25.0
+        // Other fields (rain, humidity, etc.) left -1 = not present
+                };
+        return aprs_encode_weather_report(info, len, &wx);
+    } else if (strcmp(qtype, "MSG") == 0) {
+        // Messaging capability: respond with a simple text
+        const char *msgtxt = "MSG supported";
+        size_t outlen = strlen(msgtxt);
+        if (outlen >= len)
+            return -1;
+        memcpy(info, msgtxt, outlen);
+        info[outlen] = '\0';
+        return (int) outlen;
+    } else if (strcmp(qtype, "DST") == 0) {
+        // Distance to destination if configured
+        if (local_station.has_dest) {
+            double dkm = haversine_km(local_station.latitude, local_station.longitude, local_station.dest_lat, local_station.dest_lon);
+            int dkm_int = (int) (dkm + 0.5);
+            // Format as "<km> km"
+            return snprintf(info, len, "%d km", dkm_int);
+        } else {
+            const char *nodst = "Unknown";
+            size_t outlen = strlen(nodst);
+            if (outlen >= len)
+                return -1;
+            memcpy(info, nodst, outlen);
+            info[outlen] = '\0';
+            return (int) outlen;
+        }
+    }
+    // Unsupported query type
+    return 0;
 }

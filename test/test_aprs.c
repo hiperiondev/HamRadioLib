@@ -1233,26 +1233,17 @@ int test_aprs_compressed_position() {
 
 int test_aprs_weather_extensions(void) {
     printf("test_aprs_weather_extensions\n");
-    aprs_weather_report_t input = {
-        .wind_direction = 360,
-        .wind_speed = 4,
-        .wind_gust = 15,
-        .temperature = 71,
-        .rain_1h = 0,
-        .rain_24h = 33,
-        .rain_midnight = 2,
-        .humidity = 54,
-        .barometric_pressure = 10001
-    };
+    aprs_weather_report_t input = { .wind_direction = 360, .wind_speed = 4, .wind_gust = 15, .temperature = 71, .rain_1h = 0, .rain_24h = 33,
+            .rain_midnight = 2, .humidity = 54, .barometric_pressure = 10001 };
 
     char encoded[128];
     int encoded_len = aprs_encode_peet1(encoded, sizeof(encoded), &input);
     TEST_ASSERT(encoded_len > 0, "Encoding Peet Bros #W1", 1);
 
     const char expected[] = "#W1c360s004g015t071r000p033P002h54b10001";
-    COMPARE_FRAME(encoded, (size_t)encoded_len, expected, (size_t)strlen(expected), "Encoded Peet #W1 matches expected");
+    COMPARE_FRAME(encoded, (size_t )encoded_len, expected, (size_t )strlen(expected), "Encoded Peet #W1 matches expected");
 
-    aprs_weather_report_t decoded = {0};
+    aprs_weather_report_t decoded = { 0 };
     int r = aprs_decode_peet1(encoded, &decoded);
     TEST_ASSERT(r == 0, "Decoding Peet Bros #W1", 2);
 
@@ -1267,21 +1258,14 @@ int test_aprs_weather_extensions(void) {
     TEST_ASSERT(decoded.barometric_pressure == 10001, "Pressure == 10001", 11);
 
     // Test decode from position-carrying weather
-    aprs_position_no_ts_t pos = {
-        .latitude = 42.0,
-        .longitude = -71.0,
-        .symbol_table = '/',
-        .symbol_code = '_',
-        .has_course_speed = 1,
-        .course = 180,
-        .speed = 5,
-    };
+    aprs_position_no_ts_t pos = { .latitude = 42.0, .longitude = -71.0, .symbol_table = '/', .symbol_code = '_', .has_course_speed = 1, .course = 180, .speed =
+            5, };
 
     static char comment_buf[100];
     snprintf(comment_buf, sizeof(comment_buf), "c360s004t071g015r000p033P002h54b10001");
     pos.comment = comment_buf;
 
-    aprs_weather_report_t extracted = {0};
+    aprs_weather_report_t extracted = { 0 };
     TEST_ASSERT(aprs_decode_position_weather(&pos, &extracted) == 0, "Decode position-carrying weather", 12);
 
     TEST_ASSERT(extracted.wind_direction == 360, "Extracted wind dir == 360", 13);
@@ -1297,6 +1281,31 @@ int test_aprs_weather_extensions(void) {
     return 0;
 }
 
+int test_aprs_directed_query() {
+    printf("test_aprs_directed_query\n");
+    uint8_t err = 0;
+    aprs_station_info_t local_station = { .callsign = "MYCALL", .software_version = "TestStation 1.0", .status_text = "Station operational", .latitude = 34.0,
+            .longitude = -117.0, .symbol_table = '/', .symbol_code = '>', .has_dest = true, .dest_lat = 34.1, .dest_lon = -116.9, .has_altitude = false,
+            .altitude = 0, .timestamp = "061230z" };
+
+    // Simulate incoming APRS message ":MYCALL   :?APRS?"
+    char info_in[100] = { 0 };
+    strcpy(info_in, ":MYCALL   :?APRS?");
+    aprs_message_t msg;
+    int ret = aprs_decode_message(info_in, &msg);
+    TEST_ASSERT(ret == 0, "Failed to decode incoming message", err);
+
+    // Handle the directed query
+    char response[100] = { 0 };
+    int rlen = aprs_handle_directed_query(&msg, response, sizeof(response), local_station);
+    TEST_ASSERT(rlen > 0, "No response generated for directed query", err);
+
+    // Verify response content matches the configured version string
+    TEST_ASSERT(strcmp(response, "TestStation 1.0") == 0, "Incorrect response to ?APRS? query", err);
+
+    free(msg.message);
+    return err;
+}
 
 int test_aprs_main() {
     int result = 0;
@@ -1325,6 +1334,7 @@ int test_aprs_main() {
     result |= test_aprs_test_packet();
     result |= test_aprs_compressed_position();
     result |= test_aprs_weather_extensions();
+    result |= test_aprs_directed_query();
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Tests APRS Completed. %s\n", result == 0 ? "All tests passed" : "Some tests failed");
     printf("----------------------------------------------------------------------------------\n\n");

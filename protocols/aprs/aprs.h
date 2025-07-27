@@ -55,6 +55,24 @@
 #define APRS_DTI_MIC_E_OLD '\''                // Old Mic-E data
 #define APRS_DTI_RESERVED_2 '"'                // Reserved (non-standard)
 
+// Structure holding local station data for query responses
+typedef struct {
+    char callsign[10];          // Local station callsign (null-terminated, max 9 chars)
+    char software_version[50];  // Version/identifier string for ?APRS?
+    char status_text[63];       // Status text for ?INFO?
+    double latitude;            // Latitude for ?LOC?
+    double longitude;           // Longitude for ?LOC?
+    char symbol_table;          // Symbol table for position
+    char symbol_code;           // Symbol code for position
+    // Optionally include altitude or other fields if needed
+    bool has_dest;              // If true, use dest_lat/lon for ?DST?
+    double dest_lat, dest_lon;  // Destination coordinates for ?DST?
+    bool has_altitude;          // If true, include altitude in responses
+    int altitude;               // Altitude (feet) if has_altitude is true
+    // Timestamp of last beacon for ?TIME? (format "DDHHMMz")
+    char timestamp[8];          // e.g. "061230z"
+} aprs_station_info_t;
+
 /**
  * @brief Structure for APRS Base91 compressed position report.
  *
@@ -849,5 +867,6 @@ int aprs_decode_peet2(const char *info, aprs_weather_report_t *data);
 int aprs_encode_peet1(char *dst, int len, const aprs_weather_report_t *data);
 int aprs_encode_peet2(char *dst, int len, const aprs_weather_report_t *data);
 int aprs_decode_position_weather(const aprs_position_no_ts_t *pos, aprs_weather_report_t *w);
+int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len, aprs_station_info_t local_station);
 
 #endif /* APRS_H_ */
