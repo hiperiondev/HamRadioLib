@@ -974,10 +974,10 @@ int aprs_decode_object_report(const char *info, aprs_object_report_t *data) {
         return -1;
     }
 
-    // Extract name (positions 1-9)
+    // Extract object name (1–9)
     strncpy(data->name, info + 1, 9);
     data->name[9] = '\0';
-    // Trim trailing spaces
+    // Trim trailing spaces in name
     for (int i = 8; i >= 0; i--) {
         if (data->name[i] != ' ') {
             data->name[i + 1] = '\0';
@@ -988,21 +988,23 @@ int aprs_decode_object_report(const char *info, aprs_object_report_t *data) {
         }
     }
 
-    // Extract timestamp (positions 11-17)
+    // **Extract timestamp (positions 11–17)**
+    // Format DDHHMMz or DDHHMMl with leading '*'
     if (info[10] != '*') {
         return -1;
     }
     strncpy(data->timestamp, info + 11, 7);
     data->timestamp[7] = '\0';
-    if (data->timestamp[6] != 'z') {
+    // **Allow 'z' or 'l'** for timestamp marker
+    if (data->timestamp[6] != 'z' && data->timestamp[6] != 'l') {
         return -1;
     }
 
-    // Parse latitude (positions 18-25)
+    // Parse latitude (positions 18–25)
     char lat_str[9];
     strncpy(lat_str, info + 18, 8);
     lat_str[8] = '\0';
-    int lat_ambiguity; // Dummy variable for ambiguity (not used in object reports)
+    int lat_ambiguity; // not used here
     data->latitude = aprs_parse_lat(lat_str, &lat_ambiguity);
     if (isnan(data->latitude)) {
         return -1;
@@ -1011,11 +1013,11 @@ int aprs_decode_object_report(const char *info, aprs_object_report_t *data) {
     // Symbol table (position 26)
     data->symbol_table = info[26];
 
-    // Parse longitude (positions 27-35)
+    // Parse longitude (positions 27–35)
     char lon_str[10];
     strncpy(lon_str, info + 27, 9);
     lon_str[9] = '\0';
-    int lon_ambiguity; // Dummy variable for ambiguity (not used in object reports)
+    int lon_ambiguity; // not used here
     data->longitude = aprs_parse_lon(lon_str, &lon_ambiguity);
     if (isnan(data->longitude)) {
         return -1;
@@ -1104,23 +1106,25 @@ int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data
     // Extract DTI
     data->dti = info[0];
 
-    // Extract timestamp (DDHHMMz)
+    // Extract timestamp (positions 1–7: DDHHMMz or DDHHMMl)
     if (strlen(info) < 8) {
         return -1;
     }
     memcpy(data->timestamp, info + 1, 7);
-    data->timestamp[7] = '\0'; // Null-terminate the timestamp
-    if (data->timestamp[6] != 'z') {
+    data->timestamp[7] = '\0';  // Null-terminate the timestamp
+
+    // **Allow 'z' or 'l'** (Zulu or local)
+    if (data->timestamp[6] != 'z' && data->timestamp[6] != 'l') {
         return -1;
     }
 
-    // Extract latitude (8 chars, e.g., 4903.50N)
+    // Extract latitude (8 chars: DDMM.mmN/S)
     char lat_str[9] = { 0 };
     strncpy(lat_str, info + 8, 8);
     if (lat_str[7] != 'N' && lat_str[7] != 'S')
         return -1;
 
-    // Parse latitude with improved precision
+    // Parse latitude (degrees, minutes, hundredths)
     char deg_str[3] = { lat_str[0], lat_str[1], '\0' };
     char min_str[3] = { lat_str[2], lat_str[3], '\0' };
     char frac_str[3] = { lat_str[5], lat_str[6], '\0' };
@@ -1136,13 +1140,13 @@ int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data
     if (data->symbol_table != '/' && data->symbol_table != '\\')
         return -1;
 
-    // Extract longitude (9 chars, e.g., 07201.75W)
+    // Extract longitude (9 chars: DDDMM.mmE/W)
     char lon_str[10] = { 0 };
     strncpy(lon_str, info + 17, 9);
     if (lon_str[8] != 'E' && lon_str[8] != 'W')
         return -1;
 
-    // Parse longitude with improved precision
+    // Parse longitude
     char lon_deg_str[4] = { lon_str[0], lon_str[1], lon_str[2], '\0' };
     char lon_min_str[3] = { lon_str[3], lon_str[4], '\0' };
     char lon_frac_str[3] = { lon_str[6], lon_str[7], '\0' };
@@ -1158,10 +1162,11 @@ int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data
     if (!isprint(data->symbol_code))
         return -1;
 
-    // Extract course/speed if present (e.g., 123/456)
+    // Course/speed (optional)
     data->has_course_speed = false;
-    if (strlen(info) >= 34&& info[27] == '/' && isdigit(info[28]) && isdigit(info[29]) &&
-    isdigit(info[30]) && info[31] == '/' && isdigit(info[32]) && isdigit(info[33]) && isdigit(info[34])) {
+    if (strlen(info) >= 34&& info[27] == '/' && isdigit(info[28])
+    && isdigit(info[29]) && isdigit(info[30]) && info[31] == '/'
+    && isdigit(info[32]) && isdigit(info[33]) && isdigit(info[34])) {
         char course_str[4] = { info[28], info[29], info[30], '\0' };
         char speed_str[4] = { info[32], info[33], info[34], '\0' };
         data->course = atoi(course_str);
@@ -1169,7 +1174,7 @@ int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data
         data->has_course_speed = true;
     }
 
-    // Extract comment (if any)
+    // Comment (optional)
     const char *comment_start = info + (data->has_course_speed ? 35 : 27);
     if (*comment_start) {
         data->comment = my_strdup(comment_start);
@@ -1534,8 +1539,11 @@ int aprs_decode_status(const char *info, aprs_status_t *data) {
     size_t len = strlen(info);
     if (len < 1)
         return -1;
+
     size_t pos = 1;
-    if (len >= 8 && isdigit(info[1]) && isdigit(info[2]) && isdigit(info[3]) && isdigit(info[4]) && isdigit(info[5]) && isdigit(info[6]) && info[7] == 'z') {
+    // **Check for timestamp** (7 digits + 'z' or 'l')
+    if (len >= 8 && isdigit(info[1]) && isdigit(info[2]) && isdigit(info[3]) && isdigit(info[4]) && isdigit(info[5]) && isdigit(info[6])
+            && (info[7] == 'z' || info[7] == 'l')) {
         data->has_timestamp = true;
         memcpy(data->timestamp, info + 1, 7);
         data->timestamp[7] = '\0';
@@ -1544,11 +1552,14 @@ int aprs_decode_status(const char *info, aprs_status_t *data) {
         data->has_timestamp = false;
         data->timestamp[0] = '\0';
     }
+
+    // Copy status text
     size_t text_len = len - pos;
     if (text_len > 62)
         text_len = 62;
     memcpy(data->status_text, info + pos, text_len);
     data->status_text[text_len] = '\0';
+
     return 0;
 }
 
