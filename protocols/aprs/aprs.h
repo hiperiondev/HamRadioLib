@@ -55,6 +55,24 @@
 #define APRS_DTI_MIC_E_OLD '\''                // Old Mic-E data
 #define APRS_DTI_RESERVED_2 '"'                // Reserved (non-standard)
 
+// Structure to hold optional PHG (power-height-gain) data
+typedef struct {
+    int power;     // 0–9, use -1 si no aplica
+    int height;    // 0–9 (o A–Z para >9), use -1 si no aplica
+    int gain;      // 0–9, use -1 si no aplica
+    int direction; // 0–9, use -1 si no aplica
+} aprs_phg_t;
+
+// Extended position report structure including altitude and PHG
+typedef struct {
+    double latitude;
+    double longitude;
+    char symbol;    // APRS symbol table code
+    int altitude;   // altitude in feet (use -1 if not set)
+    aprs_phg_t phg;    // power-height-gain (use -1 fields if not set)
+    char comment[100]; // remaining comment text
+} PositionReport;
+
 // Structure holding local station data for query responses
 typedef struct {
     char callsign[10];          // Local station callsign (null-terminated, max 9 chars)
@@ -113,6 +131,8 @@ typedef struct {
     int course;           ///< Course in degrees (0-360), if has_course_speed is true.
     int speed;            ///< Speed in knots (>=0), if has_course_speed is true.
     int ambiguity;        ///< Ambiguity level (0-4) for position precision.
+    int altitude;        // en pies AMSL, -1 si no aplica
+    aprs_phg_t phg;      // valores -1 si no aplica
 } aprs_position_no_ts_t;
 
 typedef struct {
@@ -871,5 +891,7 @@ int aprs_encode_peet1(char *dst, int len, const aprs_weather_report_t *data);
 int aprs_encode_peet2(char *dst, int len, const aprs_weather_report_t *data);
 int aprs_decode_position_weather(const aprs_position_no_ts_t *pos, aprs_weather_report_t *w);
 int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len, aprs_station_info_t local_station);
+void encodePositionPacket(const PositionReport *pos, char *out);
+void parseAltitudePHG(const char *comment, PositionReport *pos);
 
 #endif /* APRS_H_ */

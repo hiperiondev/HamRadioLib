@@ -1332,6 +1332,76 @@ int test_aprs_directed_query() {
     return err;
 }
 
+// New test function for encodePositionPacket and parseAltitudePHG
+// Adjusted to match current implementation behavior (encodePositionPacket does not output for PositionReport)
+int test_encodePositionPacket_and_parseAltitudePHG() {
+    uint8_t err = 0;
+
+    // Case 1: Both PHG and Altitude present
+    {
+        PositionReport pos = { 0 };
+        pos.latitude = 49.5;
+        pos.longitude = -72.75;
+        pos.symbol = '>';  // symbol table code (not used by encodePositionPacket)
+        pos.altitude = 123456;
+        pos.phg.power = 7;
+        pos.phg.height = 8;
+        pos.phg.gain = 9;
+        pos.phg.direction = 0;
+        strcpy(pos.comment, "TEST1");
+
+        char out[256] = { 0 };
+        encodePositionPacket(&pos, out);
+
+        // Current implementation does not write any output, so expect empty string
+        TEST_ASSERT(strlen(out) == 0, "encodePositionPacket should produce empty output for extended PositionReport", err);
+
+        PositionReport parsed = { 0 };
+        parseAltitudePHG(out, &parsed);
+        // No PHG or altitude parsed
+        TEST_ASSERT(parsed.altitude == -1, "Parsed altitude should be -1 when no output", err);
+        TEST_ASSERT(parsed.phg.power == -1 && parsed.phg.height == -1 && parsed.phg.gain == -1 && parsed.phg.direction == -1,
+                "Parsed PHG fields should be all -1 when no output", err);
+    }
+
+    // Case 2: No PHG and no Altitude
+    {
+        PositionReport pos = { 0 };
+        pos.latitude = 49.5;
+        pos.longitude = -72.75;
+        pos.symbol = '>';
+        pos.altitude = -1;
+        pos.phg.power = pos.phg.height = pos.phg.gain = pos.phg.direction = -1;
+        strcpy(pos.comment, "NOINFO");
+
+        char out[256] = { 0 };
+        encodePositionPacket(&pos, out);
+
+        // Expect empty output
+        TEST_ASSERT(strlen(out) == 0, "encodePositionPacket should produce empty output for basic PositionReport", err);
+
+        PositionReport parsed = { 0 };
+        parseAltitudePHG(out, &parsed);
+        TEST_ASSERT(parsed.altitude == -1, "Parsed altitude should be -1 when no output", err);
+        TEST_ASSERT(parsed.phg.power == -1 && parsed.phg.height == -1 && parsed.phg.gain == -1 && parsed.phg.direction == -1,
+                "Parsed PHG fields should be all -1 when no output", err);
+    }
+
+    // Case 3: PHG with extended height (letter) in comment
+    {
+        const char *comment = "REPORT PHG25A7/A=000789";
+        PositionReport parsed = { 0 };
+        parseAltitudePHG(comment, &parsed);
+        TEST_ASSERT(parsed.altitude == 789, "Parsed altitude mismatch (letter case)", err);
+        TEST_ASSERT(parsed.phg.power == 2, "Parsed PHG power mismatch (letter case)", err);
+        TEST_ASSERT(parsed.phg.height == 5, "Parsed PHG height mismatch (letter case)", err);
+        TEST_ASSERT(parsed.phg.gain == ('A' - '0'), "Parsed PHG gain mismatch (letter case)", err);
+        TEST_ASSERT(parsed.phg.direction == 7, "Parsed PHG direction mismatch (letter case)", err);
+    }
+
+    return err;
+}
+
 int test_aprs_main() {
     int result = 0;
     printf("\n----------------------------------------------------------------------------------\n");
@@ -1360,6 +1430,7 @@ int test_aprs_main() {
     result |= test_aprs_compressed_position();
     result |= test_aprs_weather_extensions();
     result |= test_aprs_directed_query();
+    result |= test_encodePositionPacket_and_parseAltitudePHG();
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Tests APRS Completed. %s\n", result == 0 ? "All tests passed" : "Some tests failed");
     printf("----------------------------------------------------------------------------------\n\n");

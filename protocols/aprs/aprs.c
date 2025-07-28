@@ -2352,3 +2352,93 @@ int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len
     // Unsupported query type
     return 0;
 }
+
+void encodePositionPacket(const PositionReport *pos, char *out) {
+    // 1) Codificar bloque base (lat/lon, símbolos, curso/velocidad y comentario)
+    //    usando aprs_encode_position_no_ts en un buffer suficientemente grande (256 bytes).
+    int n = aprs_encode_position_no_ts(out, 256, (const aprs_position_no_ts_t*) pos);
+    if (n < 0)
+        return;
+
+    size_t idx = (size_t) n;
+
+    // 2) PHG opcional: “PHGpphd”
+    if (pos->phg.power >= 0 && pos->phg.height >= 0 && pos->phg.gain >= 0 && pos->phg.direction >= 0) {
+        char phg[8];
+        int m = snprintf(phg, sizeof(phg), "PHG%d%d%d%d", pos->phg.power, pos->phg.height, pos->phg.gain, pos->phg.direction);
+        if (m > 0 && idx + (size_t) m < 256) {
+            memcpy(out + idx, phg, (size_t) m);
+            idx += (size_t) m;
+        }
+    }
+
+    // 3) Altitud opcional: “/A=nnnnnn”
+    if (pos->altitude >= 0) {
+        char alt[12];
+        int a = snprintf(alt, sizeof(alt), "/A=%06d", pos->altitude);
+        if (a > 0 && idx + (size_t) a < 256) {
+            memcpy(out + idx, alt, (size_t) a);
+            idx += (size_t) a;
+        }
+    }
+
+    // 4) Terminar cadena
+    out[idx] = '\0';
+}
+
+// Decode altitude (/A=nnnnnn) and PHG from the comment string of a position/status packet
+void parseAltitudePHG(const char *comment, PositionReport *pos) {
+    // Default: not found
+    pos->altitude = -1;
+    pos->phg.power = pos->phg.height = pos->phg.gain = pos->phg.direction = -1;
+
+    // Search for altitude token "/A="
+    const char *alt_ptr = strstr(comment, "/A=");
+    if (alt_ptr && strlen(alt_ptr) >= 6 + 3) {
+        // Expect exactly 6 digits after "/A="
+        char altbuf[7] = { 0 };
+        strncpy(altbuf, alt_ptr + 3, 6);
+        // Only parse if all 6 are digits
+        int valid = 1;
+        for (int i = 0; i < 6; i++) {
+            if (!isdigit(altbuf[i])) {
+                valid = 0;
+                break;
+            }
+        }
+        if (valid) {
+            pos->altitude = atoi(altbuf);
+        }
+    }
+
+    // Search for PHG token "PHG"
+    const char *phg_ptr = strstr(comment, "PHG");
+    if (phg_ptr && strlen(phg_ptr) >= 4 + 3) {
+        // Format is PHGxxxx (4 digits)
+        // Verify all 4 chars after "PHG" are digits or uppercase letters (digit or for extended height)
+        char phgbuf[5] = { 0 };
+        strncpy(phgbuf, phg_ptr + 3, 4);
+        int valid = 1;
+        for (int i = 0; i < 4; i++) {
+            if (!isdigit(phgbuf[i]) && !(i == 2 && phgbuf[i] >= 'A' && phgbuf[i] <= 'Z')) {
+                // Typically P,H,G are 0-9; height could be extended (A-Z) as per spec
+                valid = 0;
+                break;
+            }
+        }
+        if (valid) {
+            // First character: power (0-9)
+            pos->phg.power = phgbuf[0] - '0';
+            // Second: height (log2 HAAT/10) or extended; convert 'A'..'Z' to integer >9 if needed
+            if (isdigit(phgbuf[1])) {
+                pos->phg.height = phgbuf[1] - '0';
+            } else {
+                pos->phg.height = (phgbuf[1] - 'A') + 10;  // 'A' = 10, etc.
+            }
+            // Third: gain (0-9)
+            pos->phg.gain = phgbuf[2] - '0';
+            // Fourth: direction (0-9)
+            pos->phg.direction = phgbuf[3] - '0';
+        }
+    }
+}
