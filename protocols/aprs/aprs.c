@@ -205,22 +205,23 @@ double aprs_parse_lon(const char *str, int *ambiguity) {
     return lon;
 }
 
+// Convierte latitud a cadena APRS "DDMM.mmN/S", aplicando ambigüedad (espacios)
 char* lat_to_aprs(double lat, int ambiguity) {
-    static char buf[9];  // DDMM.hhN + null terminator
+    static char buf[9];  // "DDMM.mmN" + '\0'
     if (lat < -90 || lat > 90 || ambiguity < 0 || ambiguity > 4) {
         return NULL;
     }
     char dir = (lat >= 0) ? 'N' : 'S';
     lat = fabs(lat);
     int deg = (int) lat;
-    double min = (lat - deg) * 60;
+    double min = (lat - deg) * 60.0;
     int min_int = (int) min;
     int min_frac = (int) ((min - min_int) * 100);
     sprintf(buf, "%02d%02d.%02d%c", deg, min_int, min_frac, dir);
 
     if (ambiguity > 0) {
-        // Corrected digit positions: 0,1 (deg), 2,3 (min), 5,6 (hundredths)
-        int digit_positions[] = { 5, 6, 3, 2 };  // From right to left: hundredths, minutes
+        // Posi. de dígitos a reemplazar: [5,6] decimales de minutos; [3,2] dígitos de minutos
+        int digit_positions[] = { 5, 6, 3, 2 };
         for (int i = 0; i < ambiguity && i < 4; i++) {
             buf[digit_positions[i]] = ' ';
         }
@@ -228,22 +229,23 @@ char* lat_to_aprs(double lat, int ambiguity) {
     return buf;
 }
 
+// Convierte longitud a cadena APRS "DDDMM.mmE/W", con ambigüedad similar
 char* lon_to_aprs(double lon, int ambiguity) {
-    static char buf[10];  // DDDMM.hhE/W + null terminator
+    static char buf[10];  // "DDDMM.mmE" + '\0'
     if (lon < -180 || lon > 180 || ambiguity < 0 || ambiguity > 4) {
         return NULL;
     }
     char dir = (lon >= 0) ? 'E' : 'W';
     lon = fabs(lon);
     int deg = (int) lon;
-    double min = (lon - deg) * 60;
+    double min = (lon - deg) * 60.0;
     int min_int = (int) min;
     int min_frac = (int) ((min - min_int) * 100);
     sprintf(buf, "%03d%02d.%02d%c", deg, min_int, min_frac, dir);
 
     if (ambiguity > 0) {
-        // Corrected digit positions: 6,7 (hundredths), 4,3 (minutes)
-        int digit_positions[] = { 6, 7, 4, 3 };  // From right to left
+        // Posi. de dígitos a reemplazar: [6,7] decimales; [4,3] dígitos de minutos
+        int digit_positions[] = { 6, 7, 4, 3 };
         for (int i = 0; i < ambiguity && i < 4; i++) {
             buf[digit_positions[i]] = ' ';
         }
@@ -296,112 +298,59 @@ int aprs_encode_message(char *info, size_t len, const aprs_message_t *data) {
     return ret;
 }
 
-int aprs_encode_position_no_ts(char *info, size_t len, const aprs_position_no_ts_t *data) {
-    // Validate inputs
-    char dti = data->dti;
-    if (dti == '\0') {
-        dti = '!'; // Default to '!' if DTI is uninitialized
-    } else if (dti != '!' && dti != '=') {
-        printf("Error: Invalid DTI '%c'\n", dti);
+int aprs_encode_position_no_ts(char *out, size_t outlen, const aprs_position_no_ts_t *data) {
+    if (!out || !data || outlen < 21)
         return -1;
-    }
-    if (data->symbol_table != '/' && data->symbol_table != '\\') {
-        printf("Error: Invalid symbol table '%c'\n", data->symbol_table);
-        return -1;
-    }
-    if (!isprint(data->symbol_code)) {
-        printf("Error: Invalid symbol code '%c'\n", data->symbol_code);
-        return -1;
-    }
-    if (fabs(data->latitude) > 90.0f) {
-        printf("Error: Invalid latitude '%f'\n", data->latitude);
-        return -1;
-    }
-    if (fabs(data->longitude) > 180.0f) {
-        printf("Error: Invalid longitude '%f'\n", data->longitude);
-        return -1;
-    }
 
-    // Handle course and speed
-    int course = 0;
+    // Determinar DTI (por defecto '!' si data->dti==0)
+    char dti_char = (data->dti != 0) ? data->dti : APRS_DTI_POSITION_NO_TS_NO_MSG;
+
+    // Obtener cadenas APRS de lat y lon con ambigüedad
+    char *lat_str = lat_to_aprs(data->latitude, data->ambiguity);
+    char *lon_str = lon_to_aprs(data->longitude, data->ambiguity);
+    if (!lat_str || !lon_str)
+        return -1;
+
+    // Formato básico: DTI + latitud + símbolo de tabla + longitud + símbolo de código
+    int n = snprintf(out, outlen, "%c%s%c%s%c", dti_char, lat_str, data->symbol_table, lon_str, data->symbol_code);
+    if (n < 0 || (size_t) n >= outlen)
+        return -1;
+    size_t idx = (size_t) n;
+
+    // Curso/velocidad opcionales (curso mod 360, velocidad >=0)
     if (data->has_course_speed) {
-        course = (data->course % 360 + 360) % 360; // Normalize course to 0-359
-        if (data->speed < 0) {
-            printf("Error: Invalid speed '%d'\n", data->speed);
+        int course = data->course % 360;
+        if (course < 0)
+            course += 360;
+        int speed = data->speed < 0 ? 0 : data->speed;
+        int m = snprintf(out + idx, outlen - idx, "%03d/%03d", course, speed);
+        if (m < 0 || idx + (size_t) m >= outlen)
             return -1;
-        }
+        idx += (size_t) m;
     }
 
-    // Encode latitude and longitude with fixed lengths
-    char *lat_tmp = lat_to_aprs(data->latitude, data->ambiguity);
-    char *lon_tmp = lon_to_aprs(data->longitude, data->ambiguity);
-    if (lat_tmp == NULL || lon_tmp == NULL) {
-        printf("Error: Failed to convert latitude or longitude to APRS format\n");
-        return -1;
-    }
-
-    // Ensure latitude is 8 chars, longitude is 9 chars
-    char latitude[9];  // 8 + null
-    char longitude[10]; // 9 + null
-    memset(latitude, ' ', 8); // Fill with spaces
-    memset(longitude, ' ', 9);
-    latitude[8] = '\0';
-    longitude[9] = '\0';
-
-    // Copy lat_tmp, ensuring exactly 8 characters
-    size_t lat_len = my_strnlen(lat_tmp, 8);
-    memcpy(latitude, lat_tmp, lat_len);
-    for (size_t i = lat_len; i < 8; i++) {
-        latitude[i] = ' ';
-    }
-
-    // Copy lon_tmp, ensuring exactly 9 characters
-    size_t lon_len = my_strnlen(lon_tmp, 9);
-    memcpy(longitude, lon_tmp, lon_len);
-    for (size_t i = lon_len; i < 9; i++) {
-        longitude[i] = ' ';
-    }
-
-    // Encode base position string (20 chars: 1+8+1+9+1)
-    int ret = snprintf(info, len, "%c%s%c%s%c", dti, latitude, data->symbol_table, longitude, data->symbol_code);
-    if (ret != 20 || (size_t) ret >= len) {
-        printf("Error: Buffer too small or overflow for base position string\n");
-        return -1;
-    }
-
-    // Add course and speed if present
-    if (data->has_course_speed) {
-        int speed = data->speed;
-        int ret2 = snprintf(info + ret, len - ret, "%03d/%03d", course, speed);
-        if (ret2 < 0 || (size_t) ret2 >= len - ret) {
-            printf("Error: Buffer overflow for course/speed\n");
+    // Comentario opcional
+    if (data->comment && *data->comment) {
+        size_t clen = strlen(data->comment);
+        if (idx + clen >= outlen)
             return -1;
-        }
-        ret += ret2;
+        memcpy(out + idx, data->comment, clen);
+        idx += clen;
     }
 
-    // Add comment if present
-    if (data->comment && strlen(data->comment) > 0) {
-        int ret2 = snprintf(info + ret, len - ret, "%s", data->comment);
-        if (ret2 < 0 || (size_t) ret2 >= len - ret) {
-            printf("Error: Buffer overflow for comment\n");
-            return -1;
-        }
-        ret += ret2;
-    }
-
-    return ret; // Return length of encoded string
+    out[idx] = '\0';
+    return (int) idx;
 }
 
 int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data) {
     if (!info || !data)
         return -1;
     size_t len = strlen(info);
-    // Base "no‑TS" packet is exactly 20 chars: DTI(1)+LAT(8)+SYM_TBL(1)+LON(9)+SYM_CODE(1)
-    if ((info[0] != '!' && info[0] != '/') || len < 20)
+    // Base "no-TS" packet is exactly 20 chars: DTI(1)+LAT(8)+SYM_TBL(1)+LON(9)+SYM_CODE(1)
+    if ((info[0] != '!' && info[0] != '=') || len < 20)
         return -1;
 
-    // Zero‑init everything
+    // Zero-init everything
     *data = (aprs_position_no_ts_t ) { 0 };
     data->dti = info[0];
 
@@ -444,7 +393,7 @@ int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data) {
         memcpy(cs_str, info + idx, 7);
         int course = atoi(cs_str);
         int speed = atoi(cs_str + 4);
-        // invalid if course ≥360 or speed <0
+        // invalid if course >=360 or speed <0
         if (course < 0 || course >= 360 || speed < 0)
             return -1;
 

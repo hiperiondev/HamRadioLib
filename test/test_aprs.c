@@ -150,6 +150,18 @@ int test_aprs_position_encoding_decoding() {
         free(decoded.comment);
     }
 
+    // Test: position/no‑TS with '=' DTI and comment
+    {
+        aprs_position_no_ts_t pos = { .latitude = 49.5, .longitude = -72.75, .symbol_table = '/', .symbol_code = '-', .has_course_speed = false, .comment =
+                "Msg", .dti = '=' };
+        char info[64];
+        int len = aprs_encode_position_no_ts(info, sizeof(info), &pos);
+
+        // 23‑char payload: "=4930.00N/07245.00W-Msg"
+        TEST_ASSERT(len == 23, "Position encoding length incorrect", err);
+        TEST_ASSERT(strcmp(info, "=4930.00N/07245.00W-Msg") == 0, "Encoded position incorrect", err);
+    }
+
     return err;
 }
 
@@ -225,6 +237,19 @@ int test_aprs_real_packets() {
         TEST_ASSERT(strcmp(msg.message_number, "001") == 0, "Real message number incorrect", err);
         free(msg.message);
         free(msg.message_number);
+    }
+
+    {
+        const char *info = "=4903.50N/07201.75W-Test /A=001234";
+        aprs_position_no_ts_t pos;
+        int ret = aprs_decode_position_no_ts(info, &pos);
+        TEST_ASSERT(ret == 0, "Real position decoding with '=' DTI failed", err);
+        TEST_ASSERT(fabs(pos.latitude - 49.058333) < 0.001, "Real position latitude incorrect", err);
+        TEST_ASSERT(fabs(pos.longitude + 72.029167) < 0.001, "Real position longitude incorrect", err);
+        TEST_ASSERT(pos.symbol_table == '/', "Real position symbol table incorrect", err);
+        TEST_ASSERT(pos.symbol_code == '-', "Real position symbol code incorrect", err);
+        TEST_ASSERT(strcmp(pos.comment, "Test /A=001234") == 0, "Real position comment incorrect", err);
+        free(pos.comment);
     }
 
     return err;
