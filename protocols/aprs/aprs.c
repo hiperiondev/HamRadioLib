@@ -1354,23 +1354,31 @@ int aprs_decode_mice_info(const char *info, size_t len, aprs_mice_t *data, bool 
 }
 
 int aprs_encode_telemetry(char *info, size_t len, const aprs_telemetry_t *data) {
-    if (len < 30) {
-        return -1;
-    }
-    // Validate analog values
+    if (len < 30) return -1;
+    // Validate analog values (allow 0–999 instead of 0–255)
     for (int i = 0; i < 5; i++) {
-        if (data->analog[i] < 0 || data->analog[i] > 255) {
+        if (data->analog[i] < 0 || data->analog[i] > 999) {
             return -1;
         }
     }
+    // Build 8-bit digital bitstring
     char bits_str[9];
     for (int i = 7; i >= 0; i--) {
         bits_str[7 - i] = ((data->digital >> i) & 1) ? '1' : '0';
     }
     bits_str[8] = '\0';
-    int ret = snprintf(info, len, "T#%03u,%03u,%03u,%03u,%03u,%03u,%s", data->sequence_number % 1000, (unsigned int) data->analog[0],
-            (unsigned int) data->analog[1], (unsigned int) data->analog[2], (unsigned int) data->analog[3], (unsigned int) data->analog[4], bits_str);
-    if (ret < 0 || (size_t) ret >= len) {
+    // Format: T#<seq>,<a0>,<a1>,<a2>,<a3>,<a4>,<8-bit-bits>
+    int ret = snprintf(info, len,
+        "T#%03u,%03u,%03u,%03u,%03u,%03u,%s",
+        data->sequence_number % 1000,
+        (unsigned int) data->analog[0],
+        (unsigned int) data->analog[1],
+        (unsigned int) data->analog[2],
+        (unsigned int) data->analog[3],
+        (unsigned int) data->analog[4],
+        bits_str
+    );
+    if (ret < 0 || (size_t)ret >= len) {
         return -1;
     }
     return ret;
@@ -2243,27 +2251,6 @@ static double haversine_km(double lat1, double lon1, double lat2, double lon2) {
     return R * c;
 }
 
-/**
- * @brief Handle a directed station query and generate an APRS response info field.
- * @param msg      Decoded incoming message (must be an APRS message to local station).
- * @param info     Output buffer for the response info field.
- * @param len      Size of the output buffer.
- * @return Length of response info written, or 0 if no response, or -1 on error.
- *
- * This function checks if *msg* is a directed query to local_station.callsign.
- * If so, it extracts the query type (between '?' marks) and builds the
- * appropriate response in *info*.  Responses may use aprs_encode_* functions.
- * For example:
- *   ?APRS? -> software_version string (no DTI prefix).
- *   ?INFO? -> status text (with '>' prefix via aprs_encode_status).
- *   ?LOC? -> position report via aprs_encode_position_no_ts.
- *   ?TIME? -> timestamp via aprs_encode_status with has_timestamp.
- *   ?WX? -> weather report via aprs_encode_weather_report (not shown).
- *   ?MSG? -> messaging support text.
- *   ?DST? -> distance to configured dest (if has_dest).
- * Supported query types are case-sensitive (uppercase).
- * The incoming *msg.addressee* must match local station (trailing spaces trimmed).
- */
 int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len, aprs_station_info_t local_station) {
     if (!msg || !info)
         return -1;
@@ -2271,7 +2258,6 @@ int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len
     char dest[10];
     strncpy(dest, msg->addressee, 9);
     dest[9] = '\0';
-    // Trim trailing spaces
     for (int i = strlen(dest) - 1; i >= 0 && dest[i] == ' '; i--)
         dest[i] = '\0';
     if (strcmp(dest, local_station.callsign) != 0) {
@@ -2284,7 +2270,7 @@ int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len
         return 0; // Not a valid query
     }
     // Extract query type (between '?')
-    char qtype[12];
+    char qtype[20];
     size_t type_len = tlen - 2;
     if (type_len >= sizeof(qtype))
         type_len = sizeof(qtype) - 1;
@@ -2295,21 +2281,26 @@ int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len
     if (strcmp(qtype, "APRS") == 0) {
         // Respond with software version string (no prefix)
         size_t outlen = strlen(local_station.software_version);
-        if (outlen >= len)
-            return -1;
+        if (outlen >= len) return -1;
         memcpy(info, local_station.software_version, outlen);
         info[outlen] = '\0';
-        return (int) outlen;
+        return (int)outlen;
     } else if (strcmp(qtype, "INFO") == 0) {
         // Respond with status text (with '>' prefix)
         aprs_status_t st = { .has_timestamp = false };
         memcpy(st.status_text, local_station.status_text, sizeof(st.status_text) - 1);
-        st.status_text[sizeof(st.status_text) - 1] = '\0';  // ensure null termination
+        st.status_text[sizeof(st.status_text) - 1] = '\0';
         return aprs_encode_status(info, len, &st);
     } else if (strcmp(qtype, "LOC") == 0) {
         // Respond with current position (no timestamp)
-        aprs_position_no_ts_t pos = { .latitude = local_station.latitude, .longitude = local_station.longitude, .symbol_table = local_station.symbol_table,
-                .symbol_code = local_station.symbol_code, .comment = NULL, .dti = '!' };
+        aprs_position_no_ts_t pos = {
+            .latitude = local_station.latitude,
+            .longitude = local_station.longitude,
+            .symbol_table = local_station.symbol_table,
+            .symbol_code = local_station.symbol_code,
+            .comment = NULL,
+            .dti = '!'
+        };
         return aprs_encode_position_no_ts(info, len, &pos);
     } else if (strcmp(qtype, "TIME") == 0) {
         // Respond with the last beacon time (use status with timestamp)
@@ -2318,40 +2309,93 @@ int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len
         st.status_text[0] = '\0';
         return aprs_encode_status(info, len, &st);
     } else if (strcmp(qtype, "WX") == 0) {
-        // (Optional) Weather data if available; here we send a dummy weather report
-        static aprs_weather_report_t wx = { .timestamp = "000000z", .wind_direction = 90, .wind_speed = 5, .temperature = 25.0
-        // Other fields (rain, humidity, etc.) left -1 = not present
-                };
+        // Dummy weather report
+        static aprs_weather_report_t wx = { .timestamp = "000000z", .wind_direction = 90, .wind_speed = 5, .temperature = 25.0 };
         return aprs_encode_weather_report(info, len, &wx);
     } else if (strcmp(qtype, "MSG") == 0) {
         // Messaging capability: respond with a simple text
         const char *msgtxt = "MSG supported";
         size_t outlen = strlen(msgtxt);
-        if (outlen >= len)
-            return -1;
+        if (outlen >= len) return -1;
         memcpy(info, msgtxt, outlen);
         info[outlen] = '\0';
-        return (int) outlen;
+        return (int)outlen;
     } else if (strcmp(qtype, "DST") == 0) {
         // Distance to destination if configured
         if (local_station.has_dest) {
             double dkm = haversine_km(local_station.latitude, local_station.longitude, local_station.dest_lat, local_station.dest_lon);
-            int dkm_int = (int) (dkm + 0.5);
-            // Format as "<km> km"
+            int dkm_int = (int)(dkm + 0.5);
             return snprintf(info, len, "%d km", dkm_int);
         } else {
             const char *nodst = "Unknown";
             size_t outlen = strlen(nodst);
-            if (outlen >= len)
-                return -1;
+            if (outlen >= len) return -1;
             memcpy(info, nodst, outlen);
             info[outlen] = '\0';
-            return (int) outlen;
+            return (int)outlen;
         }
+    } else if (strcmp(qtype, "APRSP") == 0) {
+        // Respond with current position (with timestamp)
+        aprs_position_with_ts_t pos = {0};
+        pos.dti = '/';
+        pos.latitude = local_station.latitude;
+        pos.longitude = local_station.longitude;
+        pos.symbol_table = local_station.symbol_table;
+        pos.symbol_code = local_station.symbol_code;
+        memcpy(pos.timestamp, local_station.timestamp, 8);  // "DDHHMMz"
+        pos.timestamp[7] = 'z';
+        return aprs_encode_position_with_ts(info, len, &pos);
+    } else if (strcmp(qtype, "APRSS") == 0) {
+        // Respond with status (no timestamp)
+        aprs_status_t st = { .has_timestamp = false };
+        memcpy(st.status_text, local_station.status_text, sizeof(st.status_text) - 1);
+        st.status_text[sizeof(st.status_text) - 1] = '\0';
+        return aprs_encode_status(info, len, &st);
+    } else if (strcmp(qtype, "APRSM") == 0) {
+        // Respond with messages (none)
+        const char *res = "No messages";
+        size_t outlen = strlen(res);
+        if (outlen >= len) return -1;
+        memcpy(info, res, outlen);
+        info[outlen] = '\0';
+        return (int)outlen;
+    } else if (strcmp(qtype, "APRSO") == 0) {
+        // Respond with objects (none)
+        const char *res = "No objects";
+        size_t outlen = strlen(res);
+        if (outlen >= len) return -1;
+        memcpy(info, res, outlen);
+        info[outlen] = '\0';
+        return (int)outlen;
+    } else if (strcmp(qtype, "APRSD") == 0) {
+        // Respond with direct hears (none)
+        const char *res = "Directs=";
+        size_t outlen = strlen(res);
+        if (outlen >= len) return -1;
+        memcpy(info, res, outlen);
+        info[outlen] = '\0';
+        return (int)outlen;
+    } else if (strncmp(qtype, "APRSH", 5) == 0) {
+        // Query: has heard a particular station
+        const char *res = "Not heard";
+        size_t outlen = strlen(res);
+        if (outlen >= len) return -1;
+        memcpy(info, res, outlen);
+        info[outlen] = '\0';
+        return (int)outlen;
+    } else if (strcmp(qtype, "APRST") == 0 || strcmp(qtype, "PING") == 0) {
+        // Respond with route trace (none)
+        const char *res = "No route";
+        size_t outlen = strlen(res);
+        if (outlen >= len) return -1;
+        memcpy(info, res, outlen);
+        info[outlen] = '\0';
+        return (int)outlen;
     }
     // Unsupported query type
     return 0;
 }
+
 
 void encodePositionPacket(const PositionReport *pos, char *out) {
     // 1) Codificar bloque base (lat/lon, símbolos, curso/velocidad y comentario)
