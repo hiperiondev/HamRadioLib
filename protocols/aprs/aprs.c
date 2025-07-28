@@ -823,24 +823,67 @@ int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
 }
 
 int aprs_encode_object_report(char *info, size_t len, const aprs_object_report_t *data) {
-    if (data->symbol_table != '/' && data->symbol_table != '\\') {
-        return -1; // Invalid symbol table
-    }
-    if (!isprint(data->symbol_code)) {
-        return -1; // Invalid symbol code
-    }
-    char *lat_str = lat_to_aprs(data->latitude, 0);
-    char *lon_str = lon_to_aprs(data->longitude, 0);
-    if (!lat_str || !lon_str) {
-        return -1;
-    }
+    char *p = info;
+    size_t remaining = len;
 
-    int ret = snprintf(info, len, ";%-9s*%s%s%c%s%c", data->name, data->timestamp, lat_str, data->symbol_table, lon_str, data->symbol_code);
-    if (ret < 0 || (size_t) ret >= len) {
+    // 1) Espacio mínimo: DTI + 9 name + 1 flag + 8 ts + 8 lat + 1 tbl + 9 lon + 1 code + '\0'
+    const size_t MIN_REQUIRED = 1 + 9 + 1 + 7 + 8 + 1 + 9 + 1 + 1;
+    if (remaining < MIN_REQUIRED)
         return -1;
-    }
 
-    return ret;
+    // 2) DTI
+    *p++ = APRS_DTI_OBJECT_REPORT;  // ';'
+    remaining--;
+
+    // 3) Nombre (hasta 9 chars, padded con espacios)
+    size_t nlen = strlen(data->name);
+    if (nlen > 9)
+        nlen = 9;
+    memcpy(p, data->name, nlen);
+    if (nlen < 9)
+        memset(p + nlen, ' ', 9 - nlen);
+    p += 9;
+    remaining -= 9;
+
+    // 4) Flag de estado
+    *p++ = (data->killed ? '_' : '*');
+    remaining--;
+
+    // 5) Timestamp (7 chars "DDHHMMz", obligatorio)
+    if (remaining < 7)
+        return -1;
+    memcpy(p, data->timestamp, 7);
+    p += 7;
+    remaining -= 7;
+
+    // 6) Latitud (8 chars)
+    char *lat = lat_to_aprs(data->latitude, 0);
+    if (!lat || remaining < 8 + 1)
+        return -1;
+    memcpy(p, lat, 8);
+    p += 8;
+    remaining -= 8;
+
+    // 7) Símbolo tabla
+    *p++ = data->symbol_table;
+    remaining--;
+
+    // 8) Longitud (9 chars)
+    char *lon = lon_to_aprs(data->longitude, 0);
+    if (!lon || remaining < 9 + 1)
+        return -1;
+    memcpy(p, lon, 9);
+    p += 9;
+    remaining -= 9;
+
+    // 9) Símbolo código
+    *p++ = data->symbol_code;
+    remaining--;
+
+    // 10) Terminar cadena
+    *p = '\0';
+
+    return (int) (p - info);
 }
 
 int aprs_decode_object_report(const char *info, aprs_object_report_t *data) {
