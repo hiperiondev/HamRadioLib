@@ -1402,6 +1402,96 @@ int test_encodePositionPacket_and_parseAltitudePHG() {
     return err;
 }
 
+int test_aprs_additional_queries() {
+    // Test functionalities not yet covered by existing tests (directed queries)
+    printf("test_aprs_additional_queries\n");
+    uint8_t err = 0;
+
+    // Set up a local station info for directed queries
+    aprs_station_info_t local = {
+        .callsign = "MYCALL",
+        .software_version = "TestStation 2.0",
+        .status_text = "Running",
+        .latitude = 34.0,
+        .longitude = -117.0,
+        .symbol_table = '/', .symbol_code = '>',
+        .has_dest = false,
+        .dest_lat = 0.0, .dest_lon = 0.0,
+        .timestamp = "061230z"
+    };
+
+    // 1) ?DST? query when has_dest = false -> should return "Unknown"
+    {
+        char info_in[100] = ":MYCALL   :?DST?";
+        aprs_message_t msg;
+        int ret = aprs_decode_message(info_in, &msg);
+        TEST_ASSERT(ret == 0, "Decode DST query message", err);
+
+        char response[100] = { 0 };
+        int rlen = aprs_handle_directed_query(&msg, response, sizeof(response), local);
+        TEST_ASSERT(rlen > 0, "DST query response length >0", err);
+        TEST_ASSERT(strcmp(response, "Unknown") == 0, "DST without dest should be Unknown", err);
+        free(msg.message);
+    }
+
+    // 2) ?DST? query when has_dest = true -> should return distance km
+    local.has_dest = true;
+    local.dest_lat = 34.1;
+    local.dest_lon = -116.9;
+    {
+        char info_in[100] = ":MYCALL   :?DST?";
+        aprs_message_t msg;
+        int ret = aprs_decode_message(info_in, &msg);
+        TEST_ASSERT(ret == 0, "Decode DST query message", err);
+
+        char response[100] = { 0 };
+        int rlen = aprs_handle_directed_query(&msg, response, sizeof(response), local);
+        TEST_ASSERT(rlen > 0, "DST query with dest response length >0", err);
+        // Expect something like "14 km"
+        const char *km_pos = strstr(response, " km");
+        TEST_ASSERT(km_pos != NULL, "DST response should contain ' km'", err);
+        // Leading number > 0
+        int dist = atoi(response);
+        TEST_ASSERT(dist > 0, "DST distance parsed > 0", err);
+        free(msg.message);
+    }
+
+    // 3) ?LOC? query -> current position without timestamp
+    {
+        char info_in[100] = ":MYCALL   :?LOC?";
+        aprs_message_t msg;
+        int ret = aprs_decode_message(info_in, &msg);
+        TEST_ASSERT(ret == 0, "Decode LOC query message", err);
+
+        char response[100] = { 0 };
+        int rlen = aprs_handle_directed_query(&msg, response, sizeof(response), local);
+        TEST_ASSERT(rlen > 0, "LOC query response length >0", err);
+        // Expected encoded position: "!3400.00N/11700.00W>"
+        const char *expected = "!3400.00N/11700.00W>";
+        COMPARE_FRAME(response, (size_t)rlen, expected, (size_t)strlen(expected), "LOC query response");
+        free(msg.message);
+    }
+
+    // 4) ?TIME? query -> status with timestamp only
+    {
+        char info_in[100] = ":MYCALL   :?TIME?";
+        aprs_message_t msg;
+        int ret = aprs_decode_message(info_in, &msg);
+        TEST_ASSERT(ret == 0, "Decode TIME query message", err);
+
+        char response[100] = { 0 };
+        int rlen = aprs_handle_directed_query(&msg, response, sizeof(response), local);
+        TEST_ASSERT(rlen > 0, "TIME query response length >0", err);
+        // Should start with '>' and contain timestamp
+        TEST_ASSERT(response[0] == '>', "TIME response should start with '>'", err);
+        TEST_ASSERT(strcmp(response, ">061230z") == 0, "TIME query response content", err);
+        free(msg.message);
+    }
+
+    return err;
+}
+
+
 int test_aprs_main() {
     int result = 0;
     printf("\n----------------------------------------------------------------------------------\n");
@@ -1431,6 +1521,7 @@ int test_aprs_main() {
     result |= test_aprs_weather_extensions();
     result |= test_aprs_directed_query();
     result |= test_encodePositionPacket_and_parseAltitudePHG();
+    result |= test_aprs_additional_queries();
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Tests APRS Completed. %s\n", result == 0 ? "All tests passed" : "Some tests failed");
     printf("----------------------------------------------------------------------------------\n\n");

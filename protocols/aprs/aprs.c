@@ -822,117 +822,187 @@ int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
     return 0;
 }
 
-int aprs_encode_object_report(char *info, size_t len, const aprs_object_report_t *data) {
-    char *p = info;
-    size_t remaining = len;
+int aprs_encode_object_report(char *dest, size_t len, const aprs_object_report_t *data) {
+    size_t pos = 0;
 
-    // 1) Espacio mínimo: DTI + 9 name + 1 flag + 8 ts + 8 lat + 1 tbl + 9 lon + 1 code + '\0'
-    const size_t MIN_REQUIRED = 1 + 9 + 1 + 7 + 8 + 1 + 9 + 1 + 1;
-    if (remaining < MIN_REQUIRED)
+    // 1) DTI
+    if (pos + 1 >= len)
         return -1;
+    dest[pos++] = APRS_DTI_OBJECT_REPORT;  // ';'
 
-    // 2) DTI
-    *p++ = APRS_DTI_OBJECT_REPORT;  // ';'
-    remaining--;
-
-    // 3) Nombre (hasta 9 chars, padded con espacios)
+    // 2) Object name: pad with spaces to exactly 9 bytes
+    if (pos + 9 >= len)
+        return -1;
     size_t nlen = strlen(data->name);
     if (nlen > 9)
         nlen = 9;
-    memcpy(p, data->name, nlen);
+    memcpy(dest + pos, data->name, nlen);
     if (nlen < 9)
-        memset(p + nlen, ' ', 9 - nlen);
-    p += 9;
-    remaining -= 9;
+        memset(dest + pos + nlen, ' ', 9 - nlen);
+    pos += 9;
 
-    // 4) Flag de estado
-    *p++ = (data->killed ? '_' : '*');
-    remaining--;
-
-    // 5) Timestamp (7 chars "DDHHMMz", obligatorio)
-    if (remaining < 7)
+    // 3) Live/killed
+    if (pos + 1 >= len)
         return -1;
-    memcpy(p, data->timestamp, 7);
-    p += 7;
-    remaining -= 7;
+    dest[pos++] = data->killed ? '_' : '*';
 
-    // 6) Latitud (8 chars)
-    char *lat = lat_to_aprs(data->latitude, 0);
-    if (!lat || remaining < 8 + 1)
+    // 4) Timestamp (7 chars)
+    if (pos + 7 >= len)
         return -1;
-    memcpy(p, lat, 8);
-    p += 8;
-    remaining -= 8;
+    memcpy(dest + pos, data->timestamp, 7);
+    pos += 7;
 
-    // 7) Símbolo tabla
-    *p++ = data->symbol_table;
-    remaining--;
-
-    // 8) Longitud (9 chars)
-    char *lon = lon_to_aprs(data->longitude, 0);
-    if (!lon || remaining < 9 + 1)
+    // 5) Latitude (8 chars)
+    if (pos + 8 >= len)
         return -1;
-    memcpy(p, lon, 9);
-    p += 9;
-    remaining -= 9;
+    {
+        char *latstr = lat_to_aprs(data->latitude, 0);
+        memcpy(dest + pos, latstr, 8);
+    }
+    pos += 8;
 
-    // 9) Símbolo código
-    *p++ = data->symbol_code;
-    remaining--;
+    // 6) Symbol table
+    if (pos + 1 >= len)
+        return -1;
+    dest[pos++] = data->symbol_table;
 
-    // 10) Terminar cadena
-    *p = '\0';
+    // 7) Longitude (9 chars)
+    if (pos + 9 >= len)
+        return -1;
+    {
+        char *lonstr = lon_to_aprs(data->longitude, 0);
+        memcpy(dest + pos, lonstr, 9);
+    }
+    pos += 9;
 
-    return (int) (p - info);
+    // 8) Symbol code
+    if (pos + 1 >= len)
+        return -1;
+    dest[pos++] = data->symbol_code;
+
+    // 9) Optional course/speed
+    if (data->has_course_speed) {
+        int c = data->course % 360;
+        if (c < 0)
+            c += 360;
+        int s = data->speed < 0 ? 0 : data->speed;
+        int w = snprintf(dest + pos, len - pos, "/%03d/%03d", c, s);
+        if (w < 0 || (size_t) w >= len - pos)
+            return -1;
+        pos += w;
+    }
+
+    // 10) Optional PHG
+    if (data->phg.power || data->phg.height || data->phg.gain || data->phg.direction) {
+        int w = snprintf(dest + pos, len - pos, "PHG%d%d%d%d", data->phg.power, data->phg.height, data->phg.gain, data->phg.direction);
+        if (w < 0 || (size_t) w >= len - pos)
+            return -1;
+        pos += w;
+    }
+
+    // 11) Optional comment
+    if (data->comment && *data->comment) {
+        size_t clen = strlen(data->comment);
+        if (pos + clen >= len)
+            return -1;
+        memcpy(dest + pos, data->comment, clen);
+        pos += clen;
+    }
+
+    // Null‐terminate
+    if (pos >= len)
+        return -1;
+    dest[pos] = '\0';
+    return (int) pos;
 }
 
 int aprs_decode_object_report(const char *info, aprs_object_report_t *data) {
-    size_t len = strlen(info);
-    if (info[0] != ';' || len < 37)
+    const char *p = info;
+    char buf[16];
+    int dummy_amb;
+
+    // 1) DTI
+    if (*p++ != APRS_DTI_OBJECT_REPORT)  // ';'
         return -1;
 
-    /* Name (1–9), trim spaces */
-    strncpy(data->name, info + 1, 9);
-    data->name[9] = '\0';
-    for (int i = 8; i >= 0 && data->name[i] == ' '; i--)
-        data->name[i] = '\0';
+    // 2) Name (always 9 chars, space-padded)
+    memcpy(data->name, p, 9);
+    data->name[9] = '\0';  // safe C string
+    // Trim trailing spaces (per APRS1.2: not significant)
+    for (int i = 8; i >= 0; i--) {
+        if (data->name[i] == ' ')
+            data->name[i] = '\0';
+        else
+            break;
+    }
+    p += 9;
 
-    /* Live/killed marker (*) or (_) at pos 10 */
-    char mk = info[10];
-    if (mk == '*')
-        data->killed = false;
-    else if (mk == '_')
-        data->killed = true;
-    else
-        return -1;
+    // 3) Live/killed
+    data->killed = (*p++ == '_');
 
-    /* Timestamp (11–17) */
-    memcpy(data->timestamp, info + 11, 7);
+    // 4) Timestamp
+    memcpy(data->timestamp, p, 7);
     data->timestamp[7] = '\0';
-    if (data->timestamp[6] != 'z' && data->timestamp[6] != 'l')
-        return -1;
+    p += 7;
 
-    /* Latitude (18–25) */
-    char lat_str[9] = { 0 };
-    memcpy(lat_str, info + 18, 8);
-    int lat_amb;
-    data->latitude = aprs_parse_lat(lat_str, &lat_amb);
-    if (isnan(data->latitude))
-        return -1;
+    // 5) Latitude
+    memcpy(buf, p, 8);
+    buf[8] = '\0';
+    data->latitude = aprs_parse_lat(buf, &dummy_amb);
+    p += 8;
 
-    /* Symbol table at 26 */
-    data->symbol_table = info[26];
+    // 6) Symbol table
+    data->symbol_table = *p++;
 
-    /* Longitude (27–35) */
-    char lon_str[10] = { 0 };
-    memcpy(lon_str, info + 27, 9);
-    int lon_amb;
-    data->longitude = aprs_parse_lon(lon_str, &lon_amb);
-    if (isnan(data->longitude))
-        return -1;
+    // 7) Longitude
+    memcpy(buf, p, 9);
+    buf[9] = '\0';
+    data->longitude = aprs_parse_lon(buf, &dummy_amb);
+    p += 9;
 
-    /* Symbol code at 36 */
-    data->symbol_code = info[36];
+    // 8) Symbol code
+    data->symbol_code = *p++;
+
+    // 9) Optional course/speed
+    data->has_course_speed = false;
+    if (*p == '/') {
+        int c, s;
+        if (sscanf(p, "/%3d/%3d", &c, &s) == 2) {
+            data->course = c;
+            data->speed = s;
+            data->has_course_speed = true;
+        }
+        // skip both '/' sections
+        p = strchr(p + 1, '/') ? : p;
+        if (p)
+            p = strchr(p + 1, '/') ? : p;
+        if (p)
+            p++;
+    }
+
+    // 10) Optional PHG
+    memset(&data->phg, 0, sizeof(data->phg));
+    if (strncmp(p, "PHG", 3) == 0) {
+        int pw, ht, gn, dir;
+        if (sscanf(p + 3, "%1d%1d%1d%1d", &pw, &ht, &gn, &dir) == 4) {
+            data->phg.power = pw;
+            data->phg.height = ht;
+            data->phg.gain = gn;
+            data->phg.direction = dir;
+        }
+        p += 7; // skip "PHGpphd"
+    }
+
+    // 11) Comment
+    if (*p != '\0') {
+        size_t clen = strlen(p) + 1;
+        data->comment = malloc(clen);
+        if (!data->comment)
+            return -1;
+        memcpy(data->comment, p, clen);
+    } else {
+        data->comment = NULL;
+    }
 
     return 0;
 }
@@ -1354,7 +1424,8 @@ int aprs_decode_mice_info(const char *info, size_t len, aprs_mice_t *data, bool 
 }
 
 int aprs_encode_telemetry(char *info, size_t len, const aprs_telemetry_t *data) {
-    if (len < 30) return -1;
+    if (len < 30)
+        return -1;
     // Validate analog values (allow 0–999 instead of 0–255)
     for (int i = 0; i < 5; i++) {
         if (data->analog[i] < 0 || data->analog[i] > 999) {
@@ -1368,17 +1439,9 @@ int aprs_encode_telemetry(char *info, size_t len, const aprs_telemetry_t *data) 
     }
     bits_str[8] = '\0';
     // Format: T#<seq>,<a0>,<a1>,<a2>,<a3>,<a4>,<8-bit-bits>
-    int ret = snprintf(info, len,
-        "T#%03u,%03u,%03u,%03u,%03u,%03u,%s",
-        data->sequence_number % 1000,
-        (unsigned int) data->analog[0],
-        (unsigned int) data->analog[1],
-        (unsigned int) data->analog[2],
-        (unsigned int) data->analog[3],
-        (unsigned int) data->analog[4],
-        bits_str
-    );
-    if (ret < 0 || (size_t)ret >= len) {
+    int ret = snprintf(info, len, "T#%03u,%03u,%03u,%03u,%03u,%03u,%s", data->sequence_number % 1000, (unsigned int) data->analog[0],
+            (unsigned int) data->analog[1], (unsigned int) data->analog[2], (unsigned int) data->analog[3], (unsigned int) data->analog[4], bits_str);
+    if (ret < 0 || (size_t) ret >= len) {
         return -1;
     }
     return ret;
@@ -1410,26 +1473,52 @@ int aprs_decode_telemetry(const char *info, aprs_telemetry_t *data) {
 }
 
 int aprs_encode_status(char *info, size_t len, const aprs_status_t *data) {
-    if (!info || !data || len < 1)
+    if (!info || !data) {
         return -1;
+    }
+    if (len == 0) {
+        return -1;
+    }
     size_t pos = 0;
-    info[pos++] = '>';
+    // Prefix with '>' (Status Report DTI)
+    if (pos < len) {
+        info[pos++] = APRS_DTI_STATUS;  // '>'
+    } else {
+        return -1;
+    }
+    // Optional timestamp (DDHHMMz)
     if (data->has_timestamp) {
-        if (pos + 7 > len)
+        // Timestamp must be exactly 7 chars ending in 'z'
+        if (strlen(data->timestamp) != 7 || data->timestamp[6] != 'z') {
             return -1;
+        }
+        // Ensure space for 7-char timestamp + status text
+        if (pos + 7 >= len) {
+            return -1;
+        }
         memcpy(info + pos, data->timestamp, 7);
         pos += 7;
     }
+    // Determine status text length
     size_t text_len = strlen(data->status_text);
-    if (text_len > 62)
-        text_len = 62;
-    if (pos + text_len > len)
+    // Enforce APRS limits: 62 chars without timestamp, 55 with
+    if (data->has_timestamp) {
+        if (text_len > 55) {
+            return -1;
+        }
+    } else {
+        if (text_len > 62) {
+            return -1;
+        }
+    }
+    // Ensure space for status text + null terminator
+    if (pos + text_len >= len) {
         return -1;
+    }
     memcpy(info + pos, data->status_text, text_len);
     pos += text_len;
-    if (pos < len)
-        info[pos] = '\0'; // Null-terminate if space allows
-    return pos;
+    info[pos] = '\0';
+    return (int) pos;
 }
 
 int aprs_decode_status(const char *info, aprs_status_t *data) {
@@ -1554,7 +1643,7 @@ int aprs_encode_item_report(char *info, size_t len, const aprs_item_report_t *da
         return -1; // Invalid symbol code
     }
 
-    // Pad name to 9 characters (right‑padded with spaces)
+    // Pad name to 9 characters (right-padded with spaces)
     char name_padded[10];
     snprintf(name_padded, sizeof(name_padded), "%-9s", data->name);
 
@@ -1573,6 +1662,28 @@ int aprs_encode_item_report(char *info, size_t len, const aprs_item_report_t *da
 
     if (ret < 0 || (size_t) ret >= len) {
         return -1; // Encoding error or buffer too small
+    }
+
+    // Optional course/speed "CCC/SSS"
+    if (data->has_course_speed) {
+        int course = data->course % 360;
+        if (course < 0)
+            course += 360;
+        int speed = data->speed < 0 ? 0 : data->speed;
+        int m = snprintf(info + ret, len - ret, "%03d/%03d", course, speed);
+        if (m < 0 || (size_t) ret + (size_t) m >= len) {
+            return -1;
+        }
+        ret += m;
+    }
+
+    // Optional PHG (power/height/gain/directivity)
+    if (data->has_phg) {
+        int m = snprintf(info + ret, len - ret, "PHG%d%d%d%d", data->phg.power, data->phg.height, data->phg.gain, data->phg.direction);
+        if (m < 0 || (size_t) ret + (size_t) m >= len) {
+            return -1;
+        }
+        ret += m;
     }
 
     // Append optional comment if present
@@ -1599,12 +1710,16 @@ int aprs_decode_item_report(const char *info, aprs_item_report_t *data) {
         return -1;
     size_t len = strlen(info);
 
-    // Must start with ')' and be at least 30 chars:
+    // Must start with ')' and be at least 30 chars (base format)
     if (info[0] != ')' || len < 30)
         return -1;
 
     // Zero‑init
     *data = (aprs_item_report_t ) { 0 };
+
+    // Set default PHG fields
+    data->phg.power = data->phg.height = data->phg.gain = data->phg.direction = -1;
+    data->has_phg = false;
 
     // --- Name (9 chars) ---
     char raw_name[10] = { 0 };
@@ -1620,7 +1735,7 @@ int aprs_decode_item_report(const char *info, aprs_item_report_t *data) {
     if (flag == '!') {
         data->is_live = true;
         data->killed = false;
-    } else if (flag == '=') {        // ← match encoder
+    } else if (flag == '=') {
         data->is_live = false;
         data->killed = true;
     } else {
@@ -1642,20 +1757,69 @@ int aprs_decode_item_report(const char *info, aprs_item_report_t *data) {
     char lon_str[10] = { 0 };
     memcpy(lon_str, info + 20, 9);
     int lon_ambiguity;
-    data->longitude = aprs_parse_lon(lon_str, &lon_ambiguity);  // ← pass ambiguity
+    data->longitude = aprs_parse_lon(lon_str, &lon_ambiguity);
     if (isnan(data->longitude))
         return -1;
 
     // --- Symbol code ---
     data->symbol_code = info[29];
 
+    // Position index after base (name+flag+lat+symbol_tbl+lon+symbol_code = 30 chars)
+    size_t pos = 30;
+
+    // Optional course/speed "CCC/SSS"
+    data->has_course_speed = false;
+    if (pos + 7 <= len&&
+    isdigit((unsigned char)info[pos]) && isdigit((unsigned char)info[pos+1]) && isdigit((unsigned char)info[pos+2]) &&
+    info[pos+3] == '/' &&
+    isdigit((unsigned char)info[pos+4]) && isdigit((unsigned char)info[pos+5]) && isdigit((unsigned char)info[pos+6])) {
+        char cs_str[8] = { 0 };
+        memcpy(cs_str, info + pos, 7);
+        int course = atoi(cs_str);
+        int speed = atoi(cs_str + 4);
+        if (course >= 0 && course < 360 && speed >= 0) {
+            data->has_course_speed = true;
+            data->course = course;
+            data->speed = speed;
+            pos += 7;
+        } else {
+            return -1;
+        }
+    }
+
+    // Optional PHG "PHGpphd"
+    if (pos + 7 <= len && strncmp(info + pos, "PHG", 3) == 0) {
+        char phgbuf[5] = { 0 };
+        memcpy(phgbuf, info + pos + 3, 4);
+        bool valid = true;
+        for (int i = 0; i < 4; i++) {
+            char c = phgbuf[i];
+            if (!isdigit((unsigned char )c) && !(i == 1 && c >= 'A' && c <= 'Z')) {
+                valid = false;
+                break;
+            }
+        }
+        if (valid) {
+            data->has_phg = true;
+            data->phg.power = phgbuf[0] - '0';
+            if (isdigit(phgbuf[1])) {
+                data->phg.height = phgbuf[1] - '0';
+            } else {
+                data->phg.height = (phgbuf[1] - 'A') + 10;
+            }
+            data->phg.gain = phgbuf[2] - '0';
+            data->phg.direction = phgbuf[3] - '0';
+            pos += 7;
+        }
+    }
+
     // --- Optional comment ---
-    if (len > 30) {
-        data->comment = malloc(len - 30 + 1);
+    if (pos < len) {
+        data->comment = malloc(len - pos + 1);
         if (!data->comment)
             return -1;
-        memcpy(data->comment, info + 30, len - 30);
-        data->comment[len - 30] = '\0';
+        memcpy(data->comment, info + pos, len - pos);
+        data->comment[len - pos] = '\0';
     } else {
         data->comment = malloc(1);
         if (!data->comment)
@@ -2281,10 +2445,11 @@ int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len
     if (strcmp(qtype, "APRS") == 0) {
         // Respond with software version string (no prefix)
         size_t outlen = strlen(local_station.software_version);
-        if (outlen >= len) return -1;
+        if (outlen >= len)
+            return -1;
         memcpy(info, local_station.software_version, outlen);
         info[outlen] = '\0';
-        return (int)outlen;
+        return (int) outlen;
     } else if (strcmp(qtype, "INFO") == 0) {
         // Respond with status text (with '>' prefix)
         aprs_status_t st = { .has_timestamp = false };
@@ -2293,14 +2458,8 @@ int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len
         return aprs_encode_status(info, len, &st);
     } else if (strcmp(qtype, "LOC") == 0) {
         // Respond with current position (no timestamp)
-        aprs_position_no_ts_t pos = {
-            .latitude = local_station.latitude,
-            .longitude = local_station.longitude,
-            .symbol_table = local_station.symbol_table,
-            .symbol_code = local_station.symbol_code,
-            .comment = NULL,
-            .dti = '!'
-        };
+        aprs_position_no_ts_t pos = { .latitude = local_station.latitude, .longitude = local_station.longitude, .symbol_table = local_station.symbol_table,
+                .symbol_code = local_station.symbol_code, .comment = NULL, .dti = '!' };
         return aprs_encode_position_no_ts(info, len, &pos);
     } else if (strcmp(qtype, "TIME") == 0) {
         // Respond with the last beacon time (use status with timestamp)
@@ -2316,27 +2475,29 @@ int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len
         // Messaging capability: respond with a simple text
         const char *msgtxt = "MSG supported";
         size_t outlen = strlen(msgtxt);
-        if (outlen >= len) return -1;
+        if (outlen >= len)
+            return -1;
         memcpy(info, msgtxt, outlen);
         info[outlen] = '\0';
-        return (int)outlen;
+        return (int) outlen;
     } else if (strcmp(qtype, "DST") == 0) {
         // Distance to destination if configured
         if (local_station.has_dest) {
             double dkm = haversine_km(local_station.latitude, local_station.longitude, local_station.dest_lat, local_station.dest_lon);
-            int dkm_int = (int)(dkm + 0.5);
+            int dkm_int = (int) (dkm + 0.5);
             return snprintf(info, len, "%d km", dkm_int);
         } else {
             const char *nodst = "Unknown";
             size_t outlen = strlen(nodst);
-            if (outlen >= len) return -1;
+            if (outlen >= len)
+                return -1;
             memcpy(info, nodst, outlen);
             info[outlen] = '\0';
-            return (int)outlen;
+            return (int) outlen;
         }
     } else if (strcmp(qtype, "APRSP") == 0) {
         // Respond with current position (with timestamp)
-        aprs_position_with_ts_t pos = {0};
+        aprs_position_with_ts_t pos = { 0 };
         pos.dti = '/';
         pos.latitude = local_station.latitude;
         pos.longitude = local_station.longitude;
@@ -2355,47 +2516,51 @@ int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len
         // Respond with messages (none)
         const char *res = "No messages";
         size_t outlen = strlen(res);
-        if (outlen >= len) return -1;
+        if (outlen >= len)
+            return -1;
         memcpy(info, res, outlen);
         info[outlen] = '\0';
-        return (int)outlen;
+        return (int) outlen;
     } else if (strcmp(qtype, "APRSO") == 0) {
         // Respond with objects (none)
         const char *res = "No objects";
         size_t outlen = strlen(res);
-        if (outlen >= len) return -1;
+        if (outlen >= len)
+            return -1;
         memcpy(info, res, outlen);
         info[outlen] = '\0';
-        return (int)outlen;
+        return (int) outlen;
     } else if (strcmp(qtype, "APRSD") == 0) {
         // Respond with direct hears (none)
         const char *res = "Directs=";
         size_t outlen = strlen(res);
-        if (outlen >= len) return -1;
+        if (outlen >= len)
+            return -1;
         memcpy(info, res, outlen);
         info[outlen] = '\0';
-        return (int)outlen;
+        return (int) outlen;
     } else if (strncmp(qtype, "APRSH", 5) == 0) {
         // Query: has heard a particular station
         const char *res = "Not heard";
         size_t outlen = strlen(res);
-        if (outlen >= len) return -1;
+        if (outlen >= len)
+            return -1;
         memcpy(info, res, outlen);
         info[outlen] = '\0';
-        return (int)outlen;
+        return (int) outlen;
     } else if (strcmp(qtype, "APRST") == 0 || strcmp(qtype, "PING") == 0) {
         // Respond with route trace (none)
         const char *res = "No route";
         size_t outlen = strlen(res);
-        if (outlen >= len) return -1;
+        if (outlen >= len)
+            return -1;
         memcpy(info, res, outlen);
         info[outlen] = '\0';
-        return (int)outlen;
+        return (int) outlen;
     }
     // Unsupported query type
     return 0;
 }
-
 
 void encodePositionPacket(const PositionReport *pos, char *out) {
     // 1) Codificar bloque base (lat/lon, símbolos, curso/velocidad y comentario)
@@ -2485,4 +2650,75 @@ void parseAltitudePHG(const char *comment, PositionReport *pos) {
             pos->phg.direction = phgbuf[3] - '0';
         }
     }
+}
+
+// Parse a User-Defined APRS information field beginning with '{'
+void parse_user_defined(const char *info) {
+    if (info == NULL || info[0] != '{')
+        return;  // Not a user-defined packet
+    UserDefinedFormat udf;
+    udf.userID = info[1];
+    udf.packetType = info[2];
+    // Copy the remainder of the field as ASCII data
+    strncpy(udf.data, info + 3, sizeof(udf.data) - 1);
+    udf.data[sizeof(udf.data) - 1] = '\0';
+
+    // (Application-specific handling of udf follows here, e.g. store or display it)
+    printf("User-Defined packet: UserID=%c, Type=%c, Data=\"%s\"\n", udf.userID, udf.packetType, udf.data);
+}
+
+// Parse a Third-Party APRS packet (leading '}' indicates a tunnel header)
+void parse_third_party(const char *info) {
+    if (info == NULL || info[0] != '}')
+        return;  // Not a third-party packet
+    // Find the "::" that separates the header from the original APRS packet
+    const char *sep = strstr(info, "::");
+    if (!sep) {
+        // Malformed third-party packet; no separator found
+        return;
+    }
+    // The original APRS packet begins after the "::"
+    const char *inner = sep + 2;
+    // Recursively parse the inner packet as a normal APRS information field
+    // (You would typically call your general parsing routine here)
+    printf("Third-Party packet (inner): \"%s\"\n", inner);
+    // e.g. parse_info_field(inner);
+}
+
+// Parse an Agrelo DFJr telemetry APRS field beginning with '%'
+void parse_agrelo(const char *info) {
+    if (info == NULL || info[0] != '%')
+        return;  // Not an Agrelo packet
+    AgreloData adf = { { 0 }, { 0 }, 0 };
+    const char *p = info + 1;
+
+    // Extract a (up to 3-char) ID before the first comma
+    int i = 0;
+    while (*p != '\0' && *p != ',' && i < 3) {
+        adf.id[i++] = *p++;
+    }
+    adf.id[i] = '\0';
+    if (*p == ',')
+        p++;
+
+    // Parse five analog values separated by commas
+    for (int j = 0; j < 5; ++j) {
+        if (*p == '\0')
+            break;
+        adf.analog[j] = atoi(p);
+        p = strchr(p, ',');
+        if (!p)
+            break;
+        ++p;
+    }
+
+    // Parse the remaining 8-bit digital status in binary form
+    if (*p != '\0') {
+        // Assume the rest is a binary string like "11001010"
+        adf.digital = strtol(p, NULL, 2);
+    }
+
+    // (Application-specific handling of adf follows here)
+    printf("Agrelo DFJr packet: ID=\"%s\", Analogs=%d,%d,%d,%d,%d, Digital=0x%02X\n", adf.id, adf.analog[0], adf.analog[1], adf.analog[2], adf.analog[3],
+            adf.analog[4], adf.digital);
 }

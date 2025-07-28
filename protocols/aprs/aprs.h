@@ -91,6 +91,20 @@ typedef struct {
     char timestamp[8];          // e.g. "061230z"
 } aprs_station_info_t;
 
+// Structure for a User-Defined APRS packet
+typedef struct {
+    char userID;        // One-character User ID (after '{')
+    char packetType;    // One-character user-defined packet type
+    char data[256];     // Rest of the data (printable ASCII)
+} UserDefinedFormat;
+
+// Structure for an Agrelo DFJr telemetry packet
+typedef struct {
+    char id[4];        // Up to 3-char identifier (null-terminated)
+    int analog[5];     // Five analog telemetry values
+    int digital;       // 8-bit digital status (binary)
+} AgreloData;
+
 /**
  * @brief Structure for APRS Base91 compressed position report.
  *
@@ -204,7 +218,12 @@ typedef struct {
     double longitude;     ///< Longitude in decimal degrees (-180 to 180).
     char symbol_table;    ///< Symbol table identifier ('/' or '\').
     char symbol_code;     ///< Symbol code (printable ASCII).
-    bool killed;           // false = live (*), true = killed (_)
+    bool killed;          ///< false = live (*), true = killed (_)
+    bool has_course_speed;          ///< True if course/speed fields are included.
+    int course;           ///< Course in degrees (0-360), if has_course_speed is true.
+    int speed;            ///< Speed in knots, if has_course_speed is true.
+    aprs_phg_t phg;       ///< PHG data (power, height, gain, direction).
+    char *comment;        ///< Optional comment field, null-terminated.
 } aprs_object_report_t;
 
 /**
@@ -285,9 +304,14 @@ typedef struct {
     double longitude;     ///< Longitude in decimal degrees (-180 to 180).
     char symbol_table;    ///< Symbol table identifier ('/' or '\').
     char symbol_code;     ///< Symbol code (printable ASCII).
+    bool has_course_speed; ///< Flag indicating if course and speed are included.
+    int course;           ///< Course in degrees (0-360), if has_course_speed is true.
+    int speed;            ///< Speed in knots (>=0), if has_course_speed is true.
+    bool has_phg;         ///< Flag indicating if PHG data is included.
+    aprs_phg_t phg;       ///< PHG data (power/height/gain/directivity), values -1 if not provided.
     char *comment;        ///< Optional comment field, null-terminated.
-    bool killed;           // false = live (*), true = killed (_)
-    char timestamp[8];     // DDHHMM[z|l] + NULL
+    bool killed;          // false = live (*), true = killed (_)
+    char timestamp[8];    // DDHHMM[z|l] + NULL
 } aprs_item_report_t;
 
 typedef struct {
@@ -885,13 +909,148 @@ bool aprs_is_compressed_position(const char *info);
  */
 void aprs_free_compressed_position(aprs_compressed_position_t *data);
 
+/**
+ * @brief Decode Peet Bros Weather Format 1
+ *
+ * This function parses a Peet Bros Instruments weather packet (format 1)
+ * from the given APRS information field.
+ *
+ * @param info  Null-terminated string containing the APRS info field
+ *              starting with the Peet1 prefix character.
+ * @param data  Pointer to an aprs_weather_report_t structure that will
+ *              be filled with the decoded weather data.
+ * @return      0 on success, or a negative error code on failure.
+ */
 int aprs_decode_peet1(const char *info, aprs_weather_report_t *data);
+
+/**
+ * @brief Decode Peet Bros Weather Format 2
+ *
+ * This function parses a Peet Bros Instruments weather packet (format 2)
+ * from the given APRS information field.
+ *
+ * @param info  Null-terminated string containing the APRS info field
+ *              starting with the Peet2 prefix character.
+ * @param data  Pointer to an aprs_weather_report_t structure that will
+ *              be filled with the decoded weather data.
+ * @return      0 on success, or a negative error code on failure.
+ */
 int aprs_decode_peet2(const char *info, aprs_weather_report_t *data);
+
+/**
+ * @brief Encode Peet Bros Weather Format 1
+ *
+ * This function formats the given weather data into the Peet Bros
+ * Instruments APRS weather string (format 1) and writes it into the
+ * destination buffer.
+ *
+ * @param dst   Pointer to the buffer where the encoded string will be written.
+ * @param len   Size of the destination buffer in bytes.
+ * @param data  Pointer to an aprs_weather_report_t structure containing
+ *              the weather data to encode.
+ * @return      Number of characters written on success, or a negative
+ *              error code if the buffer is too small or data is invalid.
+ */
 int aprs_encode_peet1(char *dst, int len, const aprs_weather_report_t *data);
+
+/**
+ * @brief Encode Peet Bros Weather Format 2
+ *
+ * This function formats the given weather data into the Peet Bros
+ * Instruments APRS weather string (format 2) and writes it into the
+ * destination buffer.
+ *
+ * @param dst   Pointer to the buffer where the encoded string will be written.
+ * @param len   Size of the destination buffer in bytes.
+ * @param data  Pointer to an aprs_weather_report_t structure containing
+ *              the weather data to encode.
+ * @return      Number of characters written on success, or a negative
+ *              error code if the buffer is too small or data is invalid.
+ */
 int aprs_encode_peet2(char *dst, int len, const aprs_weather_report_t *data);
+
+/**
+ * @brief Merge Position and Weather Data
+ *
+ * This function combines a decoded position report (without timestamp)
+ * and a weather report into a single APRS weather packet string.  It
+ * is used when weather data follows immediately after a position report
+ * in the same APRS information field.
+ *
+ * @param pos   Pointer to an aprs_position_no_ts_t structure containing
+ *              the decoded position.
+ * @param w     Pointer to an aprs_weather_report_t structure that will be
+ *              filled with the merged weather data.
+ * @return      0 on success, or a negative error code on failure.
+ */
 int aprs_decode_position_weather(const aprs_position_no_ts_t *pos, aprs_weather_report_t *w);
+
+/**
+ * @brief Handle Directed Station Query
+ *
+ * Processes a directed query message addressed to this station.  Extracts
+ * the query payload and formats an appropriate response into the info buffer.
+ *
+ * @param msg            Pointer to the received aprs_message_t containing
+ *                       the query message.
+ * @param info           Destination buffer to receive the response info field.
+ * @param len            Size of the info buffer in bytes.
+ * @param local_station  Information about the local station handling the query.
+ * @return               Number of characters written on success, or a negative
+ *                       error code if the buffer is too small or the query is invalid.
+ */
 int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len, aprs_station_info_t local_station);
+
+/**
+ * @brief Encode Position Packet
+ *
+ * Serializes a PositionReport structure into an APRS position packet
+ * information field.  The output string will include latitude, longitude,
+ * symbol table, symbol code, and optional comment or status.
+ *
+ * @param pos   Pointer to a PositionReport structure containing all
+ *              necessary fields for encoding.
+ * @param out   Destination buffer where the APRS info string will be written.
+ *              Must be large enough to hold the full packet string.
+ */
 void encodePositionPacket(const PositionReport *pos, char *out);
+
+/**
+ * @brief Parse Altitude and PHG from Comment
+ *
+ * Extracts altitude and power/height/gain (PHG) information embedded
+ * in a position packet comment.  The PHG data typically follows the
+ * format "PHGxxxHyyGzz".
+ *
+ * @param comment  Null-terminated string containing the comment field from
+ *                 an APRS position report.
+ * @param pos      Pointer to a PositionReport structure where extracted
+ *                 altitude and PHG values will be stored.
+ */
 void parseAltitudePHG(const char *comment, PositionReport *pos);
+
+/**
+ * @brief Parse User-Defined Packet
+ *
+ * Handles an APRS user-defined data packet, which begins with the '{'
+ * data type identifier.  Parses any application-specific data fields
+ * following the identifier.
+ *
+ * @param info  Null-terminated string containing the info field starting
+ *              after the '{' character.
+ */
+void parse_user_defined(const char *info);
+
+/**
+ * @brief Parse Agrelo-Formatted Packet
+ *
+ * Parses a custom APRS packet type labeled "agrelo", extracting
+ * any proprietary data fields according to the agrelo application
+ * specification.
+ *
+ * @param info  Null-terminated string containing the info field of the
+ *              agrelo packet (including any header or prefix fields).
+ */
+void parse_agrelo(const char *info);
 
 #endif /* APRS_H_ */
