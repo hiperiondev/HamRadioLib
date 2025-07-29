@@ -1408,17 +1408,8 @@ int test_aprs_additional_queries() {
     uint8_t err = 0;
 
     // Set up a local station info for directed queries
-    aprs_station_info_t local = {
-        .callsign = "MYCALL",
-        .software_version = "TestStation 2.0",
-        .status_text = "Running",
-        .latitude = 34.0,
-        .longitude = -117.0,
-        .symbol_table = '/', .symbol_code = '>',
-        .has_dest = false,
-        .dest_lat = 0.0, .dest_lon = 0.0,
-        .timestamp = "061230z"
-    };
+    aprs_station_info_t local = { .callsign = "MYCALL", .software_version = "TestStation 2.0", .status_text = "Running", .latitude = 34.0, .longitude = -117.0,
+            .symbol_table = '/', .symbol_code = '>', .has_dest = false, .dest_lat = 0.0, .dest_lon = 0.0, .timestamp = "061230z" };
 
     // 1) ?DST? query when has_dest = false -> should return "Unknown"
     {
@@ -1468,7 +1459,7 @@ int test_aprs_additional_queries() {
         TEST_ASSERT(rlen > 0, "LOC query response length >0", err);
         // Expected encoded position: "!3400.00N/11700.00W>"
         const char *expected = "!3400.00N/11700.00W>";
-        COMPARE_FRAME(response, (size_t)rlen, expected, (size_t)strlen(expected), "LOC query response");
+        COMPARE_FRAME(response, (size_t )rlen, expected, (size_t )strlen(expected), "LOC query response");
         free(msg.message);
     }
 
@@ -1491,6 +1482,60 @@ int test_aprs_additional_queries() {
     return err;
 }
 
+int test_user_defined_encode_decode(void) {
+    printf("test_user_defined_encode_decode\n");
+    char info[256];
+    const char *expected = "{XYCUSTOM_PAYLOAD";
+    size_t expected_len = strlen(expected);
+
+    UserDefinedFormat in_ud = { .userID = 'X', .packetType = 'Y', .data = "CUSTOM_PAYLOAD" };
+    UserDefinedFormat out_ud;
+
+    /* Encode */
+    int elen = aprs_encode_user_defined(info, sizeof(info), &in_ud);
+    TEST_ASSERT(elen > 0, "aprs_encode_user_defined returned > 0", elen);
+    COMPARE_FRAME(info, (size_t)elen, expected, (size_t)expected_len, "User‑defined encode matches expected frame");
+
+    /* Decode */
+    int dr = aprs_decode_user_defined(info, &out_ud);
+    TEST_ASSERT(dr == 0, "aprs_decode_user_defined returns 0", dr);
+    TEST_ASSERT(out_ud.userID == 'X', "Decoded userID == 'X'", out_ud.userID);
+    TEST_ASSERT(out_ud.packetType == 'Y', "Decoded packetType == 'Y'", out_ud.packetType);
+    TEST_ASSERT(strcmp(out_ud.data, "CUSTOM_PAYLOAD") == 0, "Decoded data string matches", strcmp(out_ud.data, "CUSTOM_PAYLOAD"));
+
+    return 0;
+}
+
+int test_third_party_encode_decode(void) {
+    printf("test_third_party_encode_decode\n");
+    char info[512];
+    const char *header = "SRC>DEST,PATH1,PATH2";
+    const char *inner_info = "A>B:HELLO_WORLD";
+    char expected[512];
+    size_t header_len = strlen(header);
+    size_t inner_len = strlen(inner_info);
+    /* Build expected: '}' + header + "::" + inner_info */
+    memcpy(expected, "}", 1);
+    memcpy(expected + 1, header, header_len);
+    memcpy(expected + 1 + header_len, "::", 2);
+    memcpy(expected + 3 + header_len, inner_info, inner_len);
+    size_t expected_len = 1 + header_len + 2 + inner_len;
+
+    ThirdPartyPacket tp_out;
+
+    /* Encode */
+    int tlen = aprs_encode_third_party(info, sizeof(info), header, inner_info);
+    TEST_ASSERT(tlen > 0, "aprs_encode_third_party returned > 0", tlen);
+    COMPARE_FRAME(info, (size_t)tlen, expected, (size_t)expected_len, "Third-party encode matches expected frame");
+
+    /* Decode */
+    int dr = aprs_decode_third_party(info, &tp_out);
+    TEST_ASSERT(dr == 0, "aprs_decode_third_party returns 0", dr);
+    TEST_ASSERT(strcmp(tp_out.header, header) == 0, "Decoded third‑party header matches", strcmp(tp_out.header, header));
+    TEST_ASSERT(strcmp(tp_out.inner_info, inner_info) == 0, "Decoded third‑party inner_info matches", strcmp(tp_out.inner_info, inner_info));
+
+    return 0;
+}
 
 int test_aprs_main() {
     int result = 0;
@@ -1522,6 +1567,8 @@ int test_aprs_main() {
     result |= test_aprs_directed_query();
     result |= test_encodePositionPacket_and_parseAltitudePHG();
     result |= test_aprs_additional_queries();
+    result |= test_user_defined_encode_decode();
+    result |= test_third_party_encode_decode();
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Tests APRS Completed. %s\n", result == 0 ? "All tests passed" : "Some tests failed");
     printf("----------------------------------------------------------------------------------\n\n");

@@ -55,6 +55,14 @@
 #define APRS_DTI_MIC_E_OLD '\''                // Old Mic-E data
 #define APRS_DTI_RESERVED_2 '"'                // Reserved (non-standard)
 
+#define APRS_MAX_HEADER_LEN   128
+#define APRS_MAX_INFO_LEN     512
+
+typedef struct {
+    char header[APRS_MAX_HEADER_LEN];
+    char inner_info[APRS_MAX_INFO_LEN];
+} ThirdPartyPacket;
+
 // Structure to hold optional PHG (power-height-gain) data
 typedef struct {
     int power;     // 0–9, use -1 si no aplica
@@ -1058,5 +1066,10 @@ void parse_user_defined(const char *info);
  *              agrelo packet (including any header or prefix fields).
  */
 void parse_agrelo(const char *info);
+
+int aprs_encode_user_defined(char *info, size_t len, const UserDefinedFormat *data);
+int aprs_encode_third_party(char *info, size_t len, const char *header, const char *inner_info);
+int aprs_decode_user_defined(const char *info, UserDefinedFormat *out);
+int aprs_decode_third_party(const char *info, ThirdPartyPacket *out);
 
 #endif /* APRS_H_ */
