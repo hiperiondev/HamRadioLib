@@ -298,108 +298,131 @@ int aprs_encode_message(char *info, size_t len, const aprs_message_t *data) {
     return ret;
 }
 
+// Modified function to encode position without timestamp, including APRS v1.2 speed encoding
 int aprs_encode_position_no_ts(char *out, size_t outlen, const aprs_position_no_ts_t *data) {
-    if (!out || !data || outlen < 21)
-        return -1;
+    if (!out || !data || outlen < 21) return -1;
 
-    // Determinar DTI (por defecto '!' si data->dti==0)
+    // Determine DTI (default '!' if data->dti==0)
     char dti_char = (data->dti != 0) ? data->dti : APRS_DTI_POSITION_NO_TS_NO_MSG;
 
-    // Obtener cadenas APRS de lat y lon con ambigüedad
+    // Get APRS strings for lat and lon with ambiguity
     char *lat_str = lat_to_aprs(data->latitude, data->ambiguity);
     char *lon_str = lon_to_aprs(data->longitude, data->ambiguity);
-    if (!lat_str || !lon_str)
-        return -1;
+    if (!lat_str || !lon_str) return -1;
 
-    // Formato básico: DTI + latitud + símbolo de tabla + longitud + símbolo de código
+    // Basic format: DTI + latitude + symbol table + longitude + symbol code
     int n = snprintf(out, outlen, "%c%s%c%s%c", dti_char, lat_str, data->symbol_table, lon_str, data->symbol_code);
-    if (n < 0 || (size_t) n >= outlen)
-        return -1;
-    size_t idx = (size_t) n;
+    if (n < 0 || (size_t)n >= outlen) return -1;
+    size_t idx = (size_t)n;
 
-    // Curso/velocidad opcionales (curso mod 360, velocidad >=0)
+    // Optional course/speed (course mod 360, speed with APRS v1.2 encoding)
     if (data->has_course_speed) {
         int course = data->course % 360;
-        if (course < 0)
-            course += 360;
-        int speed = data->speed < 0 ? 0 : data->speed;
-        int m = snprintf(out + idx, outlen - idx, "%03d/%03d", course, speed);
-        if (m < 0 || idx + (size_t) m >= outlen)
-            return -1;
-        idx += (size_t) m;
+        if (course < 0) course += 360;
+        int encoded_speed;
+
+        // Special case for space station speed
+        if (data->speed == 15118) {
+            encoded_speed = 799;  // Encode 15,118 knots as 799 per APRS v1.2
+        }
+        // Speeds above 670 knots use S = 670 + (speed - 670) / 112
+        else if (data->speed > 670) {
+            if (data->speed > 74370) {
+                encoded_speed = 999;  // Clamp to max representable value
+            } else {
+                encoded_speed = 670 + (data->speed - 670) / 112;
+                if (encoded_speed > 999) encoded_speed = 999;  // Ensure within 3 digits
+            }
+        }
+        // Speeds 0-670 knots encoded directly
+        else {
+            encoded_speed = data->speed < 0 ? 0 : data->speed;
+        }
+
+        int m = snprintf(out + idx, outlen - idx, "%03d/%03d", course, encoded_speed);
+        if (m < 0 || idx + (size_t)m >= outlen) return -1;
+        idx += (size_t)m;
     }
 
-    // Comentario opcional
+    // Optional comment
     if (data->comment && *data->comment) {
         size_t clen = strlen(data->comment);
-        if (idx + clen >= outlen)
-            return -1;
+        if (idx + clen >= outlen) return -1;
         memcpy(out + idx, data->comment, clen);
         idx += clen;
     }
 
     out[idx] = '\0';
-    return (int) idx;
+    return (int)idx;
 }
 
+// Modified function to decode position without timestamp, including APRS v1.2 speed decoding
 int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data) {
-    if (!info || !data)
-        return -1;
+    if (!info || !data) return -1;
     size_t len = strlen(info);
     // Base "no-TS" packet is exactly 20 chars: DTI(1)+LAT(8)+SYM_TBL(1)+LON(9)+SYM_CODE(1)
-    if ((info[0] != '!' && info[0] != '=') || len < 20)
-        return -1;
+    if ((info[0] != '!' && info[0] != '=') || len < 20) return -1;
 
     // Zero-init everything
-    *data = (aprs_position_no_ts_t ) { 0 };
+    *data = (aprs_position_no_ts_t){0};
     data->dti = info[0];
 
     // Latitude
-    char lat_str[9] = { 0 };
+    char lat_str[9] = {0};
     memcpy(lat_str, info + 1, 8);
     int lat_amb;
     data->latitude = aprs_parse_lat(lat_str, &lat_amb);
-    if (isnan(data->latitude))
-        return -1;
+    if (isnan(data->latitude)) return -1;
     data->ambiguity = lat_amb;
 
     // Symbol table
     data->symbol_table = info[9];
 
     // Longitude
-    char lon_str[10] = { 0 };
+    char lon_str[10] = {0};
     memcpy(lon_str, info + 10, 9);
     int lon_amb;
     data->longitude = aprs_parse_lon(lon_str, &lon_amb);
-    if (isnan(data->longitude))
-        return -1;
+    if (isnan(data->longitude)) return -1;
 
     // Symbol code
     data->symbol_code = info[19];
-    if (!isprint((unsigned char )data->symbol_code))
-        return -1;
+    if (!isprint((unsigned char)data->symbol_code)) return -1;
 
     size_t idx = 20;
 
     // Optional course/speed "ccc/sss"
-    if (len >= idx + 7&& isdigit((unsigned char)info[idx])
-    && isdigit((unsigned char)info[idx+1])
-    && isdigit((unsigned char)info[idx+2])
-    && info[idx+3] == '/'
-    && isdigit((unsigned char)info[idx+4])
-    && isdigit((unsigned char)info[idx+5])
-    && isdigit((unsigned char)info[idx+6])) {
-        char cs_str[8] = { 0 };
+    if (len >= idx + 7 &&
+        isdigit((unsigned char)info[idx]) &&
+        isdigit((unsigned char)info[idx+1]) &&
+        isdigit((unsigned char)info[idx+2]) &&
+        info[idx+3] == '/' &&
+        isdigit((unsigned char)info[idx+4]) &&
+        isdigit((unsigned char)info[idx+5]) &&
+        isdigit((unsigned char)info[idx+6])) {
+        char cs_str[8] = {0};
         memcpy(cs_str, info + idx, 7);
         int course = atoi(cs_str);
-        int speed = atoi(cs_str + 4);
-        // invalid if course >=360 or speed <0
-        if (course < 0 || course >= 360 || speed < 0)
-            return -1;
+        int encoded_speed = atoi(cs_str + 4);
+        // Invalid if course >=360 or encoded_speed not 0-999
+        if (course < 0 || course >= 360 || encoded_speed < 0 || encoded_speed > 999) return -1;
 
         data->has_course_speed = true;
         data->course = course;
-        data->speed = speed;
+
+        // Special case for space station speed
+        if (encoded_speed == 799) {
+            data->speed = 15118;  // Decode 799 as 15,118 knots per APRS v1.2
+        }
+        // Speeds above 670 use speed = 670 + (S - 670) * 112
+        else if (encoded_speed > 670) {
+            data->speed = 670 + (encoded_speed - 670) * 112;
+            if (data->speed > 74370) data->speed = 74370;  // Cap at 74,370 knots
+        }
+        // Speeds 0-670 knots decoded directly
+        else {
+            data->speed = encoded_speed;
+        }
         idx += 7;
     }
 
@@ -409,8 +432,7 @@ int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data) {
     } else {
         data->comment = my_strdup("");
     }
-    if (!data->comment)
-        return -1;
+    if (!data->comment) return -1;
 
     return 0;
 }
@@ -453,7 +475,6 @@ int aprs_decode_message(const char *info, aprs_message_t *data) {
 
 int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report_t *data) {
     if (!info || !data) {
-        fprintf(stderr, "Error: Invalid input to aprs_encode_weather_report\n");
         return -1;
     }
     int written = 0;
@@ -479,7 +500,6 @@ int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report
         // include '_' before weather timestamp (positionless or symbol != '_')
         int n = snprintf(info + written, len - written, "_%s", data->timestamp);
         if (n < 0 || (size_t) n >= len - written) {
-            fprintf(stderr, "Error: Buffer overflow writing weather timestamp\n");
             return -1;
         }
         written += n;
@@ -487,7 +507,6 @@ int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report
         // Position provided and symbol_code is '_', skip extra '_'
         int n = snprintf(info + written, len - written, "%s", data->timestamp);
         if (n < 0 || (size_t) n >= len - written) {
-            fprintf(stderr, "Error: Buffer overflow writing weather timestamp\n");
             return -1;
         }
         written += n;
@@ -496,24 +515,20 @@ int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report
     if (data->wind_direction >= 0 && data->wind_direction <= 360) {
         int n = snprintf(info + written, len - written, "c%03d", data->wind_direction % 360);
         if (n < 0 || (size_t) n >= len - written) {
-            fprintf(stderr, "Error: Buffer overflow after wind direction\n");
             return -1;
         }
         written += n;
     } else {
-        fprintf(stderr, "Error: Invalid wind direction (%d)\n", data->wind_direction);
         return -1;
     }
     // Wind speed (sDDD)
     if (data->wind_speed >= 0) {
         int n = snprintf(info + written, len - written, "s%03d", data->wind_speed);
         if (n < 0 || (size_t) n >= len - written) {
-            fprintf(stderr, "Error: Buffer overflow after wind speed\n");
             return -1;
         }
         written += n;
     } else {
-        fprintf(stderr, "Error: Invalid wind speed (%d)\n", data->wind_speed);
         return -1;
     }
     // Temperature (tDDD or t-DD)
@@ -526,12 +541,10 @@ int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report
             n = snprintf(info + written, len - written, "t-%02d", -temp_f);
         }
         if (n < 0 || (size_t) n >= len - written) {
-            fprintf(stderr, "Error: Buffer overflow after temperature\n");
             return -1;
         }
         written += n;
     } else {
-        fprintf(stderr, "Error: Invalid temperature (%f)\n", data->temperature);
         return -1;
     }
     // Optional extensions (gust, rain, etc.)
