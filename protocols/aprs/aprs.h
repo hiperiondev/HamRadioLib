@@ -181,7 +181,13 @@ typedef struct {
  * Units follow APRS protocol conventions: temperature in Fahrenheit, wind speed in mph.
  */
 typedef struct {
-    char timestamp[9];
+    bool has_position;     // new flag
+    double latitude;         // degrees north (+) / south (–)
+    double longitude;        // degrees east  (+) / west  (–)
+    char symbol_table;     // e.g. '/' or '\'
+    char symbol_code;      // e.g. '>', 'O', etc.
+    bool has_timestamp;    // existing
+    char timestamp[9];     // "DDHHMMz" or "DDHHMMSS"
     char timestamp_format[4];
     bool is_zulu;
     float temperature;
