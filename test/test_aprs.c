@@ -25,6 +25,8 @@
 #include <stdint.h>
 #include <math.h>
 #include <limits.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 #include "common.h"
 #include "test_common.h"
@@ -1339,7 +1341,7 @@ int test_encodePositionPacket_and_parseAltitudePHG() {
 
     // Case 1: Both PHG and Altitude present
     {
-        PositionReport pos = { 0 };
+        aprs_position_report_t pos = { 0 };
         pos.latitude = 49.5;
         pos.longitude = -72.75;
         pos.symbol = '>';  // symbol table code (not used by encodePositionPacket)
@@ -1356,7 +1358,7 @@ int test_encodePositionPacket_and_parseAltitudePHG() {
         // Current implementation does not write any output, so expect empty string
         TEST_ASSERT(strlen(out) == 0, "encodePositionPacket should produce empty output for extended PositionReport", err);
 
-        PositionReport parsed = { 0 };
+        aprs_position_report_t parsed = { 0 };
         parseAltitudePHG(out, &parsed);
         // No PHG or altitude parsed
         TEST_ASSERT(parsed.altitude == -1, "Parsed altitude should be -1 when no output", err);
@@ -1366,7 +1368,7 @@ int test_encodePositionPacket_and_parseAltitudePHG() {
 
     // Case 2: No PHG and no Altitude
     {
-        PositionReport pos = { 0 };
+        aprs_position_report_t pos = { 0 };
         pos.latitude = 49.5;
         pos.longitude = -72.75;
         pos.symbol = '>';
@@ -1380,7 +1382,7 @@ int test_encodePositionPacket_and_parseAltitudePHG() {
         // Expect empty output
         TEST_ASSERT(strlen(out) == 0, "encodePositionPacket should produce empty output for basic PositionReport", err);
 
-        PositionReport parsed = { 0 };
+        aprs_position_report_t parsed = { 0 };
         parseAltitudePHG(out, &parsed);
         TEST_ASSERT(parsed.altitude == -1, "Parsed altitude should be -1 when no output", err);
         TEST_ASSERT(parsed.phg.power == -1 && parsed.phg.height == -1 && parsed.phg.gain == -1 && parsed.phg.direction == -1,
@@ -1390,7 +1392,7 @@ int test_encodePositionPacket_and_parseAltitudePHG() {
     // Case 3: PHG with extended height (letter) in comment
     {
         const char *comment = "REPORT PHG25A7/A=000789";
-        PositionReport parsed = { 0 };
+        aprs_position_report_t parsed = { 0 };
         parseAltitudePHG(comment, &parsed);
         TEST_ASSERT(parsed.altitude == 789, "Parsed altitude mismatch (letter case)", err);
         TEST_ASSERT(parsed.phg.power == 2, "Parsed PHG power mismatch (letter case)", err);
@@ -1488,8 +1490,8 @@ int test_user_defined_encode_decode(void) {
     const char *expected = "{XYCUSTOM_PAYLOAD";
     size_t expected_len = strlen(expected);
 
-    UserDefinedFormat in_ud = { .userID = 'X', .packetType = 'Y', .data = "CUSTOM_PAYLOAD" };
-    UserDefinedFormat out_ud;
+    aprs_user_defined_format_t in_ud = { .userID = 'X', .packetType = 'Y', .data = "CUSTOM_PAYLOAD" };
+    aprs_user_defined_format_t out_ud;
 
     /* Encode */
     int elen = aprs_encode_user_defined(info, sizeof(info), &in_ud);
@@ -1521,7 +1523,7 @@ int test_third_party_encode_decode(void) {
     memcpy(expected + 3 + header_len, inner_info, inner_len);
     size_t expected_len = 1 + header_len + 2 + inner_len;
 
-    ThirdPartyPacket tp_out;
+    aprs_third_party_packet_t tp_out;
 
     /* Encode */
     int tlen = aprs_encode_third_party(info, sizeof(info), header, inner_info);

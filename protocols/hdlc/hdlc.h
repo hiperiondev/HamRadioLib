@@ -22,6 +22,9 @@
 #ifndef HDLC_H_
 #define HDLC_H_
 
+#include <stdint.h>
+#include <stdbool.h>
+
 /**
  * @brief Reverses the bits of a given byte.
  *

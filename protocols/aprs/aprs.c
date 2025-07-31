@@ -2587,7 +2587,7 @@ int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len
     return 0;
 }
 
-void encodePositionPacket(const PositionReport *pos, char *out) {
+void encodePositionPacket(const aprs_position_report_t *pos, char *out) {
     // 1) Codificar bloque base (lat/lon, símbolos, curso/velocidad y comentario)
     //    usando aprs_encode_position_no_ts en un buffer suficientemente grande (256 bytes).
     int n = aprs_encode_position_no_ts(out, 256, (const aprs_position_no_ts_t*) pos);
@@ -2621,7 +2621,7 @@ void encodePositionPacket(const PositionReport *pos, char *out) {
 }
 
 // Decode altitude (/A=nnnnnn) and PHG from the comment string of a position/status packet
-void parseAltitudePHG(const char *comment, PositionReport *pos) {
+void parseAltitudePHG(const char *comment, aprs_position_report_t *pos) {
     // Default: not found
     pos->altitude = -1;
     pos->phg.power = pos->phg.height = pos->phg.gain = pos->phg.direction = -1;
@@ -2681,7 +2681,7 @@ void parseAltitudePHG(const char *comment, PositionReport *pos) {
 void parse_user_defined(const char *info) {
     if (info == NULL || info[0] != '{')
         return;  // Not a user-defined packet
-    UserDefinedFormat udf;
+    aprs_user_defined_format_t udf;
     udf.userID = info[1];
     udf.packetType = info[2];
     // Copy the remainder of the field as ASCII data
@@ -2714,7 +2714,7 @@ void parse_third_party(const char *info) {
 void parse_agrelo(const char *info) {
     if (info == NULL || info[0] != '%')
         return;  // Not an Agrelo packet
-    AgreloData adf = { { 0 }, { 0 }, 0 };
+    aprs_agrelo_data_t adf = { { 0 }, { 0 }, 0 };
     const char *p = info + 1;
 
     // Extract a (up to 3-char) ID before the first comma
@@ -2748,7 +2748,7 @@ void parse_agrelo(const char *info) {
             adf.analog[4], adf.digital);
 }
 
-int aprs_encode_user_defined(char *info, size_t len, const UserDefinedFormat *data) {
+int aprs_encode_user_defined(char *info, size_t len, const aprs_user_defined_format_t *data) {
     if (!info || !data)
         return -1;
     // Compute lengths: DTI + UserID + packetType + data
@@ -2789,7 +2789,7 @@ int aprs_encode_third_party(char *info, size_t len, const char *header, const ch
     return (int) total_len;
 }
 
-int aprs_decode_user_defined(const char *info, UserDefinedFormat *out) {
+int aprs_decode_user_defined(const char *info, aprs_user_defined_format_t *out) {
     if (!info || !out || info[0] != APRS_DTI_USER_DEFINED)
         return -1;
     // Must have at least prefix + userID + packetType
@@ -2809,7 +2809,7 @@ int aprs_decode_user_defined(const char *info, UserDefinedFormat *out) {
     return 0;
 }
 
-int aprs_decode_third_party(const char *info, ThirdPartyPacket *out) {
+int aprs_decode_third_party(const char *info, aprs_third_party_packet_t *out) {
     if (!info || !out || info[0] != APRS_DTI_THIRD_PARTY)
         return -1;
     // Locate the "::" separator

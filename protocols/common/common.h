@@ -23,6 +23,7 @@
 #define COMMON_H_
 
 #include <stdint.h>
+#include <stdbool.h>
 
 uint16_t CRC(unsigned char *frame, int len);
 void trim_trailing_spaces(char *str);

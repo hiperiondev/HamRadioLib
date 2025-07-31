@@ -61,7 +61,7 @@
 typedef struct {
     char header[APRS_MAX_HEADER_LEN];
     char inner_info[APRS_MAX_INFO_LEN];
-} ThirdPartyPacket;
+} aprs_third_party_packet_t;
 
 // Structure to hold optional PHG (power-height-gain) data
 typedef struct {
@@ -79,7 +79,7 @@ typedef struct {
     int altitude;   // altitude in feet (use -1 if not set)
     aprs_phg_t phg;    // power-height-gain (use -1 fields if not set)
     char comment[100]; // remaining comment text
-} PositionReport;
+} aprs_position_report_t;
 
 // Structure holding local station data for query responses
 typedef struct {
@@ -104,14 +104,14 @@ typedef struct {
     char userID;        // One-character User ID (after '{')
     char packetType;    // One-character user-defined packet type
     char data[256];     // Rest of the data (printable ASCII)
-} UserDefinedFormat;
+} aprs_user_defined_format_t;
 
 // Structure for an Agrelo DFJr telemetry packet
 typedef struct {
     char id[4];        // Up to 3-char identifier (null-terminated)
     int analog[5];     // Five analog telemetry values
     int digital;       // 8-bit digital status (binary)
-} AgreloData;
+} aprs_agrelo_data_t;
 
 /**
  * @brief Structure for APRS Base91 compressed position report.
@@ -143,18 +143,22 @@ typedef struct {
 } aprs_frame_t;
 
 typedef struct {
-    double latitude;      ///< Latitude in decimal degrees (-90 to 90).
-    double longitude;     ///< Longitude in decimal degrees (-180 to 180).
-    char symbol_table;    ///< Symbol table identifier ('/' or '\').
-    char symbol_code;     ///< Symbol code (printable ASCII).
-    char *comment;        ///< Optional comment field, null-terminated.
-    char dti;             ///< Data Type Indicator ('!' or '=' for non-messaging/messaging capable).
-    bool has_course_speed; ///< Flag indicating if course and speed are included.
-    int course;           ///< Course in degrees (0-360), if has_course_speed is true.
-    int speed;            ///< Speed in knots (>=0), if has_course_speed is true.
-    int ambiguity;        ///< Ambiguity level (0-4) for position precision.
-    int altitude;        // en pies AMSL, -1 si no aplica
-    aprs_phg_t phg;      // valores -1 si no aplica
+    double latitude;
+    double longitude;
+    char symbol_table;
+    char symbol_code;
+    char *comment;
+    char dti;
+    bool has_course_speed;
+    int course;
+    int speed;
+    int ambiguity;
+    int altitude;
+    aprs_phg_t phg;
+    bool has_dao;
+    char dao_datum;
+    char dao_lat_extra;
+    char dao_lon_extra;
 } aprs_position_no_ts_t;
 
 typedef struct {
@@ -1027,7 +1031,7 @@ int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len
  * @param out   Destination buffer where the APRS info string will be written.
  *              Must be large enough to hold the full packet string.
  */
-void encodePositionPacket(const PositionReport *pos, char *out);
+void encodePositionPacket(const aprs_position_report_t *pos, char *out);
 
 /**
  * @brief Parse Altitude and PHG from Comment
@@ -1041,7 +1045,7 @@ void encodePositionPacket(const PositionReport *pos, char *out);
  * @param pos      Pointer to a PositionReport structure where extracted
  *                 altitude and PHG values will be stored.
  */
-void parseAltitudePHG(const char *comment, PositionReport *pos);
+void parseAltitudePHG(const char *comment, aprs_position_report_t *pos);
 
 /**
  * @brief Parse User-Defined Packet
@@ -1067,9 +1071,9 @@ void parse_user_defined(const char *info);
  */
 void parse_agrelo(const char *info);
 
-int aprs_encode_user_defined(char *info, size_t len, const UserDefinedFormat *data);
+int aprs_encode_user_defined(char *info, size_t len, const aprs_user_defined_format_t *data);
 int aprs_encode_third_party(char *info, size_t len, const char *header, const char *inner_info);
-int aprs_decode_user_defined(const char *info, UserDefinedFormat *out);
-int aprs_decode_third_party(const char *info, ThirdPartyPacket *out);
+int aprs_decode_user_defined(const char *info, aprs_user_defined_format_t *out);
+int aprs_decode_third_party(const char *info, aprs_third_party_packet_t *out);
 
 #endif /* APRS_H_ */
