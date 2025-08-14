@@ -300,7 +300,8 @@ int aprs_encode_message(char *info, size_t len, const aprs_message_t *data) {
 
 // Modified function to encode position without timestamp, including APRS v1.2 speed encoding
 int aprs_encode_position_no_ts(char *out, size_t outlen, const aprs_position_no_ts_t *data) {
-    if (!out || !data || outlen < 21) return -1;
+    if (!out || !data || outlen < 21)
+        return -1;
 
     // Determine DTI (default '!' if data->dti==0)
     char dti_char = (data->dti != 0) ? data->dti : APRS_DTI_POSITION_NO_TS_NO_MSG;
@@ -308,17 +309,20 @@ int aprs_encode_position_no_ts(char *out, size_t outlen, const aprs_position_no_
     // Get APRS strings for lat and lon with ambiguity
     char *lat_str = lat_to_aprs(data->latitude, data->ambiguity);
     char *lon_str = lon_to_aprs(data->longitude, data->ambiguity);
-    if (!lat_str || !lon_str) return -1;
+    if (!lat_str || !lon_str)
+        return -1;
 
     // Basic format: DTI + latitude + symbol table + longitude + symbol code
     int n = snprintf(out, outlen, "%c%s%c%s%c", dti_char, lat_str, data->symbol_table, lon_str, data->symbol_code);
-    if (n < 0 || (size_t)n >= outlen) return -1;
-    size_t idx = (size_t)n;
+    if (n < 0 || (size_t) n >= outlen)
+        return -1;
+    size_t idx = (size_t) n;
 
     // Optional course/speed (course mod 360, speed with APRS v1.2 encoding)
     if (data->has_course_speed) {
         int course = data->course % 360;
-        if (course < 0) course += 360;
+        if (course < 0)
+            course += 360;
         int encoded_speed;
 
         // Special case for space station speed
@@ -331,7 +335,8 @@ int aprs_encode_position_no_ts(char *out, size_t outlen, const aprs_position_no_
                 encoded_speed = 999;  // Clamp to max representable value
             } else {
                 encoded_speed = 670 + (data->speed - 670) / 112;
-                if (encoded_speed > 999) encoded_speed = 999;  // Ensure within 3 digits
+                if (encoded_speed > 999)
+                    encoded_speed = 999;  // Ensure within 3 digits
             }
         }
         // Speeds 0-670 knots encoded directly
@@ -340,72 +345,80 @@ int aprs_encode_position_no_ts(char *out, size_t outlen, const aprs_position_no_
         }
 
         int m = snprintf(out + idx, outlen - idx, "%03d/%03d", course, encoded_speed);
-        if (m < 0 || idx + (size_t)m >= outlen) return -1;
-        idx += (size_t)m;
+        if (m < 0 || idx + (size_t) m >= outlen)
+            return -1;
+        idx += (size_t) m;
     }
 
     // Optional comment
     if (data->comment && *data->comment) {
         size_t clen = strlen(data->comment);
-        if (idx + clen >= outlen) return -1;
+        if (idx + clen >= outlen)
+            return -1;
         memcpy(out + idx, data->comment, clen);
         idx += clen;
     }
 
     out[idx] = '\0';
-    return (int)idx;
+    return (int) idx;
 }
 
 // Modified function to decode position without timestamp, including APRS v1.2 speed decoding
 int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data) {
-    if (!info || !data) return -1;
+    if (!info || !data)
+        return -1;
     size_t len = strlen(info);
     // Base "no-TS" packet is exactly 20 chars: DTI(1)+LAT(8)+SYM_TBL(1)+LON(9)+SYM_CODE(1)
-    if ((info[0] != '!' && info[0] != '=') || len < 20) return -1;
+    if ((info[0] != '!' && info[0] != '=') || len < 20)
+        return -1;
 
     // Zero-init everything
-    *data = (aprs_position_no_ts_t){0};
+    *data = (aprs_position_no_ts_t ) { 0 };
     data->dti = info[0];
 
     // Latitude
-    char lat_str[9] = {0};
+    char lat_str[9] = { 0 };
     memcpy(lat_str, info + 1, 8);
     int lat_amb;
     data->latitude = aprs_parse_lat(lat_str, &lat_amb);
-    if (isnan(data->latitude)) return -1;
+    if (isnan(data->latitude))
+        return -1;
     data->ambiguity = lat_amb;
 
     // Symbol table
     data->symbol_table = info[9];
 
     // Longitude
-    char lon_str[10] = {0};
+    char lon_str[10] = { 0 };
     memcpy(lon_str, info + 10, 9);
     int lon_amb;
     data->longitude = aprs_parse_lon(lon_str, &lon_amb);
-    if (isnan(data->longitude)) return -1;
+    if (isnan(data->longitude))
+        return -1;
 
     // Symbol code
     data->symbol_code = info[19];
-    if (!isprint((unsigned char)data->symbol_code)) return -1;
+    if (!isprint((unsigned char )data->symbol_code))
+        return -1;
 
     size_t idx = 20;
 
     // Optional course/speed "ccc/sss"
-    if (len >= idx + 7 &&
-        isdigit((unsigned char)info[idx]) &&
-        isdigit((unsigned char)info[idx+1]) &&
-        isdigit((unsigned char)info[idx+2]) &&
-        info[idx+3] == '/' &&
-        isdigit((unsigned char)info[idx+4]) &&
-        isdigit((unsigned char)info[idx+5]) &&
-        isdigit((unsigned char)info[idx+6])) {
-        char cs_str[8] = {0};
+    if (len >= idx + 7&&
+    isdigit((unsigned char)info[idx]) &&
+    isdigit((unsigned char)info[idx+1]) &&
+    isdigit((unsigned char)info[idx+2]) &&
+    info[idx+3] == '/' &&
+    isdigit((unsigned char)info[idx+4]) &&
+    isdigit((unsigned char)info[idx+5]) &&
+    isdigit((unsigned char)info[idx+6])) {
+        char cs_str[8] = { 0 };
         memcpy(cs_str, info + idx, 7);
         int course = atoi(cs_str);
         int encoded_speed = atoi(cs_str + 4);
         // Invalid if course >=360 or encoded_speed not 0-999
-        if (course < 0 || course >= 360 || encoded_speed < 0 || encoded_speed > 999) return -1;
+        if (course < 0 || course >= 360 || encoded_speed < 0 || encoded_speed > 999)
+            return -1;
 
         data->has_course_speed = true;
         data->course = course;
@@ -417,7 +430,8 @@ int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data) {
         // Speeds above 670 use speed = 670 + (S - 670) * 112
         else if (encoded_speed > 670) {
             data->speed = 670 + (encoded_speed - 670) * 112;
-            if (data->speed > 74370) data->speed = 74370;  // Cap at 74,370 knots
+            if (data->speed > 74370)
+                data->speed = 74370;  // Cap at 74,370 knots
         }
         // Speeds 0-670 knots decoded directly
         else {
@@ -432,7 +446,8 @@ int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data) {
     } else {
         data->comment = my_strdup("");
     }
-    if (!data->comment) return -1;
+    if (!data->comment)
+        return -1;
 
     return 0;
 }
@@ -2710,42 +2725,59 @@ void parse_third_party(const char *info) {
     // e.g. parse_info_field(inner);
 }
 
-// Parse an Agrelo DFJr telemetry APRS field beginning with '%'
-void parse_agrelo(const char *info) {
+void parse_dx_spot(const char *info) {
     if (info == NULL || info[0] != '%')
-        return;  // Not an Agrelo packet
-    aprs_agrelo_data_t adf = { { 0 }, { 0 }, 0 };
+        return;  // Not a DX packet
+    // Modified: Changed parsing logic from proprietary Agrelo telemetry to standard DX spot format
     const char *p = info + 1;
-
-    // Extract a (up to 3-char) ID before the first comma
-    int i = 0;
-    while (*p != '\0' && *p != ',' && i < 3) {
-        adf.id[i++] = *p++;
+    if (strncmp(p, "DX de ", 6) != 0)
+        return;  // Malformed DX packet; no "DX de " prefix
+    p += 6;
+    aprs_dx_spot_t dx;
+    memset(&dx, 0, sizeof(dx));
+    const char *sep = strchr(p, ':');
+    if (!sep) {
+        // Malformed; no ':' after callsign
+        return;
     }
-    adf.id[i] = '\0';
-    if (*p == ',')
-        p++;
-
-    // Parse five analog values separated by commas
-    for (int j = 0; j < 5; ++j) {
-        if (*p == '\0')
-            break;
-        adf.analog[j] = atoi(p);
-        p = strchr(p, ',');
-        if (!p)
-            break;
-        ++p;
+    // Parse de_callsign
+    size_t call_len = sep - p;
+    if (call_len >= sizeof(dx.de_callsign))
+        call_len = sizeof(dx.de_callsign) - 1;
+    strncpy(dx.de_callsign, p, call_len);
+    dx.de_callsign[call_len] = '\0';
+    p = sep + 1;
+    // Parse frequency
+    char *end;
+    dx.frequency = strtod(p, &end);
+    if (end == p || *end != ' ')
+        return;  // Invalid frequency or no space
+    p = end + 1;
+    // Parse spotted_callsign
+    const char *comment_start = strchr(p, ' ');
+    size_t spotted_len;
+    if (comment_start) {
+        spotted_len = comment_start - p;
+    } else {
+        // Modified: Use my_strnlen instead of strlen to avoid warning about bound depending on source length
+        spotted_len = my_strnlen(p, sizeof(dx.spotted_callsign) - 1);
     }
-
-    // Parse the remaining 8-bit digital status in binary form
-    if (*p != '\0') {
-        // Assume the rest is a binary string like "11001010"
-        adf.digital = strtol(p, NULL, 2);
+    // Modified: Cap spotted_len explicitly (though my_strnlen already limits)
+    if (spotted_len > sizeof(dx.spotted_callsign) - 1)
+        spotted_len = sizeof(dx.spotted_callsign) - 1;
+    strncpy(dx.spotted_callsign, p, spotted_len);
+    dx.spotted_callsign[spotted_len] = '\0';
+    // Parse optional comment
+    if (comment_start) {
+        p = comment_start + 1;
+        // Modified: Use my_strnlen for comment to consistently handle lengths and avoid potential similar warnings
+        size_t comment_len = my_strnlen(p, sizeof(dx.comment) - 1);
+        strncpy(dx.comment, p, comment_len);
+        dx.comment[comment_len] = '\0';
     }
-
-    // (Application-specific handling of adf follows here)
-    printf("Agrelo DFJr packet: ID=\"%s\", Analogs=%d,%d,%d,%d,%d, Digital=0x%02X\n", adf.id, adf.analog[0], adf.analog[1], adf.analog[2], adf.analog[3],
-            adf.analog[4], adf.digital);
+    // (Application-specific handling of dx follows here, e.g. store or display it)
+    // Modified: Changed printf to reflect DX spot instead of Agrelo
+    printf("DX Spot packet: de=\"%s\", Freq=%.3f MHz, Spotted=\"%s\", Comment=\"%s\"\n", dx.de_callsign, dx.frequency, dx.spotted_callsign, dx.comment);
 }
 
 int aprs_encode_user_defined(char *info, size_t len, const aprs_user_defined_format_t *data) {

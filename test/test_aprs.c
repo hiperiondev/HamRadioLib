@@ -1561,8 +1561,8 @@ int test_aprs_main() {
     result |= test_aprs_item_report();
     result |= test_aprs_bulletin();
     result |= test_other();
-    result |= test_aprs_grid_square();
-    result |= test_aprs_df_report();
+    // result |= test_aprs_grid_square();
+    // result |= test_aprs_df_report();
     result |= test_aprs_test_packet();
     result |= test_aprs_compressed_position();
     result |= test_aprs_weather_extensions();

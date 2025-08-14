@@ -53,10 +53,21 @@
 #define APRS_DTI_RESERVED_1 '&'                // Reserved for future use
 #define APRS_DTI_MIC_E_CURRENT '`'             // Current Mic-E data
 #define APRS_DTI_MIC_E_OLD '\''                // Old Mic-E data
-#define APRS_DTI_RESERVED_2 '"'                // Reserved (non-standard)
+#define APRS_DTI_POSITIONLESS_WEATHER '['      // Positionless weather report
+#define APRS_DTI_RESERVED_3 '+'                // Reserved for future use
+#define APRS_DTI_DX_LIST '%'                   // DX list for packet DX spotting
+#define APRS_DTI_RESERVED_2 '"'                // Test data (old)
+#define APRS_DTI_ULTIMETER '$'                 // Ultimeter 2000 WX Station (raw weather)
 
 #define APRS_MAX_HEADER_LEN   128
 #define APRS_MAX_INFO_LEN     512
+
+typedef struct {
+    char de_callsign[10];       // Caller reporting the DX
+    double frequency;           // Frequency in MHz
+    char spotted_callsign[10];  // Spotted callsign
+    char comment[256];          // DX comment
+} aprs_dx_spot_t;
 
 typedef struct {
     char header[APRS_MAX_HEADER_LEN];
@@ -105,13 +116,6 @@ typedef struct {
     char packetType;    // One-character user-defined packet type
     char data[256];     // Rest of the data (printable ASCII)
 } aprs_user_defined_format_t;
-
-// Structure for an Agrelo DFJr telemetry packet
-typedef struct {
-    char id[4];        // Up to 3-char identifier (null-terminated)
-    int analog[5];     // Five analog telemetry values
-    int digital;       // 8-bit digital status (binary)
-} aprs_agrelo_data_t;
 
 /**
  * @brief Structure for APRS Base91 compressed position report.
@@ -1059,18 +1063,7 @@ void parseAltitudePHG(const char *comment, aprs_position_report_t *pos);
  */
 void parse_user_defined(const char *info);
 
-/**
- * @brief Parse Agrelo-Formatted Packet
- *
- * Parses a custom APRS packet type labeled "agrelo", extracting
- * any proprietary data fields according to the agrelo application
- * specification.
- *
- * @param info  Null-terminated string containing the info field of the
- *              agrelo packet (including any header or prefix fields).
- */
-void parse_agrelo(const char *info);
-
+void parse_dx_spot(const char *info);
 int aprs_encode_user_defined(char *info, size_t len, const aprs_user_defined_format_t *data);
 int aprs_encode_third_party(char *info, size_t len, const char *header, const char *inner_info);
 int aprs_decode_user_defined(const char *info, aprs_user_defined_format_t *out);
