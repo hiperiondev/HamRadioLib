@@ -26,1047 +26,939 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define APRS_COMMENT_LEN 200
+/** @defgroup aprs_dti Data Type Identifiers (DTIs)
+ *  @brief Single-character identifiers that select the APRS information format.
+ *  @{
+ */
 
-// Data Type Identifiers (DTIs) for APRS packets
-#define APRS_DTI_POSITION_NO_TS_NO_MSG '!'     // Position without timestamp (no messaging)
-#define APRS_DTI_POSITION_NO_TS_WITH_MSG '='   // Position without timestamp (with messaging)
-#define APRS_DTI_POSITION_WITH_TS_NO_MSG '/'   // Position with timestamp (no messaging)
-#define APRS_DTI_POSITION_WITH_TS_WITH_MSG '@' // Position with timestamp (with messaging)
-#define APRS_DTI_OBJECT_REPORT ';'             // Object report
-#define APRS_DTI_ITEM_REPORT ')'               // Item report
-#define APRS_DTI_MESSAGE ':'                   // Message, includes bulletins and announcements
-#define APRS_DTI_STATUS '>'                    // Status report
-#define APRS_DTI_QUERY '?'                     // Query
-#define APRS_DTI_STATION_CAPABILITIES '<'      // Station capabilities
-#define APRS_DTI_TELEMETRY 'T'                 // Telemetry data
-#define APRS_DTI_WEATHER_REPORT '_'            // Weather report
-#define APRS_DTI_PEET_BROS_RAW_1 '#'           // Peet Bros U-II Weather Station (raw, format 1)
-#define APRS_DTI_PEET_BROS_RAW_2 '*'           // Peet Bros U-II Weather Station (raw, format 2)
-#define APRS_DTI_RAW_GPS '$'                   // Raw GPS data (e.g., NMEA sentences)
-#define APRS_DTI_USER_DEFINED '{'              // User-defined format
-#define APRS_DTI_THIRD_PARTY '}'               // Third-party format
-#define APRS_DTI_TEST_PACKET ','               // Test packet (invalid or test data)
-#define APRS_DTI_GRID_SQUARE '['               // Maidenhead grid locator beacon
-#define APRS_DTI_DF_REPORT '+'                 // Direction Finding report
-#define APRS_DTI_AGRELO '%'                    // Agrelo format (proprietary)
-#define APRS_DTI_RESERVED_1 '&'                // Reserved for future use
-#define APRS_DTI_MIC_E_CURRENT '`'             // Current Mic-E data
-#define APRS_DTI_MIC_E_OLD '\''                // Old Mic-E data
-#define APRS_DTI_POSITIONLESS_WEATHER '['      // Positionless weather report
-#define APRS_DTI_RESERVED_3 '+'                // Reserved for future use
-#define APRS_DTI_DX_LIST '%'                   // DX list for packet DX spotting
-#define APRS_DTI_RESERVED_2 '"'                // Test data (old)
-#define APRS_DTI_ULTIMETER '$'                 // Ultimeter 2000 WX Station (raw weather)
+/** Position w/o timestamp, no messaging. */
+#define APRS_DTI_POSITION_NO_TS_NO_MSG      '!'
+/** Position w/o timestamp, with messaging. */
+#define APRS_DTI_POSITION_NO_TS_WITH_MSG    '='
+/** Position with timestamp, no messaging. */
+#define APRS_DTI_POSITION_WITH_TS_NO_MSG    '/'
+/** Position with timestamp, with messaging. */
+#define APRS_DTI_POSITION_WITH_TS_WITH_MSG  '@'
+/** Object report. */
+#define APRS_DTI_OBJECT_REPORT              ';'
+/** Item report. */
+#define APRS_DTI_ITEM_REPORT                ')'
+/** Message (also bulletins/announcements). */
+#define APRS_DTI_MESSAGE                    ':'
+/** Status report. */
+#define APRS_DTI_STATUS                     '>'
+/** Query. */
+#define APRS_DTI_QUERY                      '?'
+/** Station capabilities. */
+#define APRS_DTI_STATION_CAPABILITIES       '<'
+/** Telemetry. */
+#define APRS_DTI_TELEMETRY                  'T'
+/** Weather report. */
+#define APRS_DTI_WEATHER_REPORT             '_'
+/** Peet Bros U-II raw weather, format 1. */
+#define APRS_DTI_PEET_BROS_RAW_1            '#'
+/** Peet Bros U-II raw weather, format 2. */
+#define APRS_DTI_PEET_BROS_RAW_2            '*'
+/** Raw GPS (e.g., NMEA). */
+#define APRS_DTI_RAW_GPS                    '$'
+/** User-defined format. */
+#define APRS_DTI_USER_DEFINED               '{'
+/** Third-party format. */
+#define APRS_DTI_THIRD_PARTY                '}'
+/** Test/invalid packet. */
+#define APRS_DTI_TEST_PACKET                ','
+/** Maidenhead grid locator beacon. */
+#define APRS_DTI_GRID_SQUARE                '['
+/** Direction Finding report. */
+#define APRS_DTI_DF_REPORT                  '+'
+/** Agrelo format (proprietary). */
+#define APRS_DTI_AGRELO                     '%'
+/** Reserved (future use). */
+#define APRS_DTI_RESERVED_1                 '&'
+/** Mic-E (current). */
+#define APRS_DTI_MIC_E_CURRENT              '`'
+/** Mic-E (old). */
+#define APRS_DTI_MIC_E_OLD                  '\''
+/** Positionless weather report. */
+#define APRS_DTI_POSITIONLESS_WEATHER       '['
+/** Reserved (future use). */
+#define APRS_DTI_RESERVED_3                 '+'
+/** DX list for packet DX spotting. */
+#define APRS_DTI_DX_LIST                    '%'
+/** Test data (old). */
+#define APRS_DTI_RESERVED_2                 '"'
+/** Ultimeter 2000 raw weather. */
+#define APRS_DTI_ULTIMETER                  '$'
+/** @} */
 
+/** @name Common buffer size limits
+ *  @{
+ */
+/** Maximum length of an APRS header (AX.25 path and station fields), characters. */
 #define APRS_MAX_HEADER_LEN   128
+/** Maximum length of an APRS information field, characters. */
 #define APRS_MAX_INFO_LEN     512
+/** Maximum recommended free-form comment length used in some structures. */
+#define APRS_COMMENT_LEN      200
+/** @} */
 
+/* =========================
+ *        Structures
+ * ========================= */
+
+/**
+ * @brief Packet containing a DX spot.
+ */
 typedef struct {
-    char de_callsign[10];       // Caller reporting the DX
-    double frequency;           // Frequency in MHz
-    char spotted_callsign[10];  // Spotted callsign
-    char comment[256];          // DX comment
+    char de_callsign[10];       /**< Reporting station callsign (up to 9 chars + NUL). */
+    double frequency;           /**< Frequency in MHz of the spotted station. */
+    char spotted_callsign[10];  /**< Spotted callsign (up to 9 chars + NUL). */
+    char comment[256];          /**< Optional DX comment text (NUL-terminated). */
 } aprs_dx_spot_t;
 
+/**
+ * @brief Third-party packet wrapper (DTI '}').
+ *
+ * The APRS "third-party" format encapsulates another APRS packet as text.
+ */
 typedef struct {
-    char header[APRS_MAX_HEADER_LEN];
-    char inner_info[APRS_MAX_INFO_LEN];
+    char header[APRS_MAX_HEADER_LEN]; /**< Outer packet header/path (NUL-terminated). */
+    char inner_info[APRS_MAX_INFO_LEN]; /**< Encapsulated APRS info field (NUL-terminated). */
 } aprs_third_party_packet_t;
 
-// Structure to hold optional PHG (power-height-gain) data
+/**
+ * @brief PHG (Power-Height-Gain) descriptor.
+ *
+ * Use -1 in members that are not present.
+ */
 typedef struct {
-    int power;     // 0–9, use -1 si no aplica
-    int height;    // 0–9 (o A–Z para >9), use -1 si no aplica
-    int gain;      // 0–9, use -1 si no aplica
-    int direction; // 0–9, use -1 si no aplica
+    int power;                  /**< Transmitter power (0–9), or -1 if absent. */
+    int height;                 /**< Antenna height (0–9 or A–Z in APRS text), or -1. */
+    int gain;                   /**< Antenna gain (0–9), or -1. */
+    int direction;              /**< Antenna directivity (0–9), or -1. */
 } aprs_phg_t;
 
-// Extended position report structure including altitude and PHG
+/**
+ * @brief Minimal position-without-timestamp report used by helpers.
+ */
 typedef struct {
-    double latitude;
-    double longitude;
-    char symbol;    // APRS symbol table code
-    int altitude;   // altitude in feet (use -1 if not set)
-    aprs_phg_t phg;    // power-height-gain (use -1 fields if not set)
-    char comment[100]; // remaining comment text
+    double latitude;            /**< Latitude in decimal degrees (-90..90). */
+    double longitude;           /**< Longitude in decimal degrees (-180..180). */
+    char symbol;                /**< Symbol code character. */
+    int altitude;               /**< Altitude in feet, or -1 if absent. */
+    aprs_phg_t phg;             /**< Optional PHG (set members to -1 if absent). */
+    char comment[100];          /**< Optional trailing comment (NUL-terminated). */
 } aprs_position_report_t;
 
-// Structure holding local station data for query responses
+/**
+ * @brief Local station information used to answer directed queries.
+ *
+ * All string fields are NUL-terminated; booleans toggle inclusion of optional values.
+ */
 typedef struct {
-    char callsign[10];          // Local station callsign (null-terminated, max 9 chars)
-    char software_version[50];  // Version/identifier string for ?APRS?
-    char status_text[63];       // Status text for ?INFO?
-    double latitude;            // Latitude for ?LOC?
-    double longitude;           // Longitude for ?LOC?
-    char symbol_table;          // Symbol table for position
-    char symbol_code;           // Symbol code for position
-    // Optionally include altitude or other fields if needed
-    bool has_dest;              // If true, use dest_lat/lon for ?DST?
-    double dest_lat, dest_lon;  // Destination coordinates for ?DST?
-    bool has_altitude;          // If true, include altitude in responses
-    int altitude;               // Altitude (feet) if has_altitude is true
-    // Timestamp of last beacon for ?TIME? (format "DDHHMMz")
-    char timestamp[8];          // e.g. "061230z"
+    char callsign[10];          /**< Local station callsign (up to 9 chars + NUL). */
+    char software_version[50];  /**< Identifier/version string for ?APRS?. */
+    char status_text[63];       /**< Status used for ?INFO? (up to 62 chars + NUL). */
+    double latitude;            /**< Lat for ?LOC?. */
+    double longitude;           /**< Lon for ?LOC?. */
+    char symbol_table;          /**< Symbol table for position responses. */
+    char symbol_code;           /**< Symbol code for position responses. */
+    bool has_dest;              /**< If true, include destination coordinates. */
+    double dest_lat;            /**< Destination latitude for ?DST?. */
+    double dest_lon;            /**< Destination longitude for ?DST?. */
+    bool has_altitude;          /**< If true, include altitude. */
+    int altitude;               /**< Altitude (feet), valid if has_altitude. */
+    char timestamp[8];          /**< Last beacon timestamp "DDHHMMz" for ?TIME?. */
 } aprs_station_info_t;
 
-// Structure for a User-Defined APRS packet
+/**
+ * @brief User-defined format (DTI '{').
+ */
 typedef struct {
-    char userID;        // One-character User ID (after '{')
-    char packetType;    // One-character user-defined packet type
-    char data[256];     // Rest of the data (printable ASCII)
+    char userID;                /**< One-character user ID (after '{'). */
+    char packetType;            /**< One-character user-defined packet type. */
+    char data[256];             /**< Arbitrary printable ASCII payload (NUL-terminated). */
 } aprs_user_defined_format_t;
 
 /**
- * @brief Structure for APRS Base91 compressed position report.
+ * @brief Compressed position (Base-91) representation (DTIs '!'/'=').
  *
- * This structure holds data for a Base91 compressed position report, including position, speed, course, altitude, and symbol.
+ * Optional course/speed/altitude are controlled by flags.
+ * Some members (e.g., comment) may be dynamically allocated by decoders.
  */
 typedef struct {
-    double latitude;      ///< Latitude in decimal degrees (-90 to 90).
-    double longitude;     ///< Longitude in decimal degrees (-180 to 180).
-    int speed;            ///< Speed in knots (0-1943), or -1 if not available.
-    int course;           ///< Course in degrees (0-360), or -1 if not available.
-    int altitude;         ///< Altitude in feet, or INT_MIN if not available.
-    char symbol_table;    ///< Symbol table identifier ('/' or '\').
-    char symbol_code;     ///< Symbol code (printable ASCII).
-    char *comment;        ///< Optional comment field, null-terminated.
-    char dti;             ///< Data Type Indicator ('!' or '=' for compressed reports).
-    bool has_course_speed; ///< Flag indicating if course and speed are included.
-    bool has_altitude;    ///< Flag indicating if altitude is included.
+    double latitude;            /**< Latitude in decimal degrees (-90..90). */
+    double longitude;           /**< Longitude in decimal degrees (-180..180). */
+    int speed;                  /**< Speed in knots (0..1943), or -1. */
+    int course;                 /**< Course in degrees (0..360), or -1. */
+    int altitude;               /**< Altitude in feet, or INT_MIN if not available. */
+    char symbol_table;          /**< Symbol table ('/' or '\\'). */
+    char symbol_code;           /**< Symbol code (printable ASCII). */
+    char *comment;              /**< Optional comment (NUL-terminated, malloc'd if decoded). */
+    char dti;                   /**< Data Type Indicator ('!' or '='). */
+    bool has_course_speed;      /**< True if course/speed were present. */
+    bool has_altitude;          /**< True if altitude was present. */
 } aprs_compressed_position_t;
 
 /**
- * @brief Structure to represent an AX.25 frame for APRS packets.
- *
- * This structure contains the source, destination, digipeater path, and information field of an APRS packet.
+ * @brief Generic APRS frame slice exposing only the info field and its length.
  */
 typedef struct {
-    char *info;                   ///< Information field of the APRS packet.
-    size_t info_len;              ///< Length of the information field.
+    char *info;                 /**< Pointer to information field buffer. */
+    size_t info_len;            /**< Length (bytes) of the information field. */
 } aprs_frame_t;
 
+/**
+ * @brief Position report without timestamp (DTIs '!' or '=').
+ *
+ * Optional course/speed, altitude, PHG and DAO extension are supported.
+ */
 typedef struct {
-    double latitude;
-    double longitude;
-    char symbol_table;
-    char symbol_code;
-    char *comment;
-    char dti;
-    bool has_course_speed;
-    int course;
-    int speed;
-    int ambiguity;
-    int altitude;
-    aprs_phg_t phg;
-    bool has_dao;
-    char dao_datum;
-    char dao_lat_extra;
-    char dao_lon_extra;
+    double latitude;            /**< Latitude in decimal degrees. */
+    double longitude;           /**< Longitude in decimal degrees. */
+    char symbol_table;          /**< Symbol table ('/' or '\\'). */
+    char symbol_code;           /**< Symbol code. */
+    char *comment;              /**< Optional free-form comment (malloc'd by decoders). */
+    char dti;                   /**< DTI used to encode the position ('!' or '='). */
+    bool has_course_speed;      /**< True if course/speed are set. */
+    int course;                 /**< Course in degrees, valid if has_course_speed. */
+    int speed;                  /**< Speed in knots, valid if has_course_speed. */
+    int ambiguity;              /**< Position ambiguity (0..4). */
+    int altitude;               /**< Altitude in feet, or -1 if absent. */
+    aprs_phg_t phg;             /**< Optional PHG (members -1 if absent). */
+    bool has_dao;               /**< True if DAO extra digits are present. */
+    char dao_datum;             /**< DAO datum ID (uppercase letter), valid if has_dao. */
+    char dao_lat_extra;         /**< Extra digit for latitude precision (0..9 base-91 char). */
+    char dao_lon_extra;         /**< Extra digit for longitude precision (0..9 base-91 char). */
 } aprs_position_no_ts_t;
 
+/**
+ * @brief Position report with timestamp (DTIs '/' or '@').
+ */
 typedef struct {
-    double latitude;      ///< Latitude in decimal degrees (-90 to 90).
-    double longitude;     ///< Longitude in decimal degrees (-180 to 180).
-    char symbol_table;    ///< Symbol table identifier ('/' or '\').
-    char symbol_code;     ///< Symbol code (printable ASCII).
-    char *comment;        ///< Optional comment field, null-terminated.
-    char timestamp[8];    ///< Timestamp in UTC (DDHHMMz for day/hour/minute).
-    char dti;             ///< Data Type Indicator ('@' or '/' for timestamped reports).
-    bool has_course_speed; ///< Flag indicating if course and speed are included.
-    int course;           ///< Course in degrees (0-360), if has_course_speed is true.
-    int speed;            ///< Speed in knots (>=0), if has_course_speed is true.
-    int ambiguity;        ///< Ambiguity level (0-4) for position precision.
+    double latitude;            /**< Latitude in decimal degrees. */
+    double longitude;           /**< Longitude in decimal degrees. */
+    char symbol_table;          /**< Symbol table ('/' or '\\'). */
+    char symbol_code;           /**< Symbol code. */
+    char *comment;              /**< Optional comment (malloc'd by decoders). */
+    char timestamp[8];          /**< "DDHHMMz" (UTC) or "DDHHMMl" (local). */
+    char dti;                   /**< DTI used ('/' or '@'). */
+    bool has_course_speed;      /**< True if course/speed are set. */
+    int course;                 /**< Course in degrees, valid if has_course_speed. */
+    int speed;                  /**< Speed in knots, valid if has_course_speed. */
+    int ambiguity;              /**< Position ambiguity (0..4). */
 } aprs_position_with_ts_t;
 
 /**
- * @brief Structure for APRS message packet.
- *
- * This structure contains the addressee, message text, and optional message number for acknowledgment.
+ * @brief APRS text message (also used for bulletins/announcements).
  */
 typedef struct {
-    char addressee[10];   ///< Addressee callsign, null-terminated, up to 9 characters.
-    char *message;        ///< Message text, up to 67 characters, null-terminated.
-    char *message_number; ///< Optional message number for acknowledgment, up to 5 characters, null-terminated.
+    char addressee[10];         /**< Addressee callsign (up to 9 chars + NUL). */
+    char *message;              /**< Message text (up to 67 chars, malloc'd by decoder). */
+    char *message_number;       /**< Optional message number (up to 5 chars), malloc'd. */
 } aprs_message_t;
 
 /**
- * @brief Structure for APRS weather report.
+ * @brief APRS weather report (canonical and vendor/raw variants).
  *
- * This structure holds weather data, including timestamp, temperature, wind speed, and wind direction.
- * Units follow APRS protocol conventions: temperature in Fahrenheit, wind speed in mph.
+ * Some fields are optional and may be left unset; boolean flags indicate
+ * presence where necessary. Raw Peet Bros and other vendor formats are
+ * supported via dedicated encode/decode helpers.
  */
 typedef struct {
-    bool has_position;     // new flag
-    double latitude;         // degrees north (+) / south (–)
-    double longitude;        // degrees east  (+) / west  (–)
-    char symbol_table;     // e.g. '/' or '\'
-    char symbol_code;      // e.g. '>', 'O', etc.
-    bool has_timestamp;    // existing
-    char timestamp[9];     // "DDHHMMz" or "DDHHMMSS"
-    char timestamp_format[4];
-    bool is_zulu;
-    float temperature;
-    int wind_speed;
-    int wind_direction;
-    int wind_gust;
-    int rainfall_last_hour;
-    int rainfall_24h;
-    int rainfall_since_midnight;
-    int barometric_pressure;
-    int humidity;
-    int luminosity;
-    float snowfall_24h;
-    int rain_rate;
-    float water_height_feet;
-    float water_height_meters;
-    float indoors_temperature;
-    int indoors_humidity;
-    int raw_rain_counter;
-    int rain_1h;          // Rain in last hour
-    int rain_24h;         // Rain in last 24 hours
-    int rain_midnight;    // Rain since midnight
+    bool has_position;          /**< True if latitude/longitude/symbols are set. */
+    double latitude;            /**< Latitude in decimal degrees. */
+    double longitude;           /**< Longitude in decimal degrees. */
+    char symbol_table;          /**< Symbol table for weather icon. */
+    char symbol_code;           /**< Symbol code for weather icon. */
+    bool has_timestamp;         /**< True if timestamp is set. */
+    char timestamp[9];          /**< "DDHHMMz" or "DDHHMMSS" (NUL-terminated). */
+    char timestamp_format[4];   /**< Small tag string to indicate parsed format. */
+    bool is_zulu;               /**< True if timestamp is UTC ('z'), else local. */
+    float temperature;          /**< Ambient temperature (°C or °F per context). */
+    int wind_speed;             /**< Wind speed (knots). */
+    int wind_direction;         /**< Wind direction (degrees). */
+    int wind_gust;              /**< Wind gust (knots). */
+    int rainfall_last_hour;     /**< Rain last hour (0.01" units or context-specific). */
+    int rainfall_24h;           /**< Rain last 24h. */
+    int rainfall_since_midnight;/**< Rain since midnight. */
+    int barometric_pressure;    /**< Barometric pressure (tenths of mbar or vendor units). */
+    int humidity;               /**< Relative humidity (%). */
+    int luminosity;             /**< Luminosity/solar radiation (vendor-specific). */
+    float snowfall_24h;         /**< Snowfall in last 24h. */
+    int rain_rate;              /**< Instantaneous rain rate. */
+    float water_height_feet;    /**< Water height (feet). */
+    float water_height_meters;  /**< Water height (meters). */
+    float indoors_temperature;  /**< Indoor temperature. */
+    int indoors_humidity;       /**< Indoor relative humidity. */
+    int raw_rain_counter;       /**< Raw rain counter (vendor). */
+    int rain_1h;                /**< Rain in last hour (duplicate convenience). */
+    int rain_24h;               /**< Rain in last 24 hours (duplicate convenience). */
+    int rain_midnight;          /**< Rain since midnight (duplicate convenience). */
 } aprs_weather_report_t;
 
 /**
- * @brief Structure for APRS object report.
- *
- * This structure holds data for an APRS object, including name, timestamp, position, and symbol.
+ * @brief APRS object report (DTI ';').
  */
 typedef struct {
-    char name[10];        ///< Object name, null-terminated, up to 9 characters.
-    char timestamp[8];    ///< Timestamp in DDHHMMz format (e.g., "111111z").
-    double latitude;      ///< Latitude in decimal degrees (-90 to 90).
-    double longitude;     ///< Longitude in decimal degrees (-180 to 180).
-    char symbol_table;    ///< Symbol table identifier ('/' or '\').
-    char symbol_code;     ///< Symbol code (printable ASCII).
-    bool killed;          ///< false = live (*), true = killed (_)
-    bool has_course_speed;          ///< True if course/speed fields are included.
-    int course;           ///< Course in degrees (0-360), if has_course_speed is true.
-    int speed;            ///< Speed in knots, if has_course_speed is true.
-    aprs_phg_t phg;       ///< PHG data (power, height, gain, direction).
-    char *comment;        ///< Optional comment field, null-terminated.
+    char name[10];              /**< Object name (up to 9 chars + NUL). */
+    char timestamp[8];          /**< "DDHHMMz". */
+    double latitude;            /**< Latitude. */
+    double longitude;           /**< Longitude. */
+    char symbol_table;          /**< Symbol table. */
+    char symbol_code;           /**< Symbol code. */
+    bool killed;                /**< True if killed ('_'), false if live ('*'). */
+    bool has_course_speed;      /**< True if course/speed are present. */
+    int course;                 /**< Course (degrees). */
+    int speed;                  /**< Speed (knots). */
+    aprs_phg_t phg;             /**< Optional PHG. */
+    char *comment;              /**< Optional comment (malloc'd by decoder). */
 } aprs_object_report_t;
 
 /**
- * @brief Structure for Mic-E encoded position report.
- *
- * This structure holds data for a Mic-E compressed position report, including position, speed, course, symbol, and message code.
+ * @brief Mic-E data representation (destination + info portions).
  */
 typedef struct {
-    double latitude;      ///< Latitude in degrees (-90 to 90).
-    double longitude;     ///< Longitude in degrees (-180 to 180).
-    int speed;            ///< Speed in knots (0-799).
-    int course;           ///< Course in degrees (0-360).
-    char symbol_table;    ///< Symbol table identifier ('/' or '\').
-    char symbol_code;     ///< Symbol code (printable ASCII).
-    char message_code[10]; ///< Message code (e.g., "M0", "C1", "Emergency"), null-terminated.
+    double latitude;            /**< Latitude. */
+    double longitude;           /**< Longitude. */
+    int speed;                  /**< Speed (knots, 0..799). */
+    int course;                 /**< Course (degrees). */
+    char symbol_table;          /**< Symbol table. */
+    char symbol_code;           /**< Symbol code. */
+    char message_code[10];      /**< Message code / status (NUL-terminated). */
 } aprs_mice_t;
 
 /**
- * @brief Structure for APRS telemetry report.
- *
- * This structure holds telemetry data, including sequence number, analog values, and digital bits.
+ * @brief APRS telemetry frame (sequence, 5 analog, 8 digital).
  */
 typedef struct {
-    unsigned int sequence_number; ///< Sequence number (0-999).
-    double analog[5];     ///< Five analog values (typically 0-255).
-    uint8_t digital;      ///< Eight digital bits (0 or 1).
+    unsigned int sequence_number; /**< Sequence number (0..999). */
+    double analog[5];           /**< Analog channels (normalized or raw per usage). */
+    uint8_t digital;            /**< 8-bit digital bitmap (bit0 = channel 1). */
 } aprs_telemetry_t;
 
 /**
- * @brief Structure for APRS status report.
- *
- * This structure holds a status message, optionally with a timestamp.
+ * @brief Status report (DTI '>').
  */
 typedef struct {
-    bool has_timestamp;   ///< Flag indicating if timestamp is present.
-    char timestamp[8];    ///< Timestamp in DDHHMMz format (e.g., "111111z"), if present.
-    char status_text[63]; ///< Status message text, up to 62 characters + null terminator.
+    bool has_timestamp;         /**< True if timestamp is included. */
+    char timestamp[8];          /**< "DDHHMMz" if present. */
+    char status_text[63];       /**< Status text (up to 62 chars + NUL). */
 } aprs_status_t;
 
 /**
- * @brief Structure for APRS general query.
- *
- * This structure holds the query type for general queries in APRS.
+ * @brief General query (DTI '?').
  */
 typedef struct {
-    char query_type[11];  ///< Query type (e.g., "APRS"), up to 10 characters + null terminator.
+    char query_type[11];        /**< Query key (e.g., "APRS"), up to 10 chars + NUL. */
 } aprs_general_query_t;
 
 /**
- * @brief Structure for APRS station capabilities.
- *
- * This structure holds the capabilities text for a station.
+ * @brief Station capabilities (DTI '<').
  */
 typedef struct {
-    char capabilities_text[100]; ///< Capabilities text, up to 99 characters + null terminator.
+    char capabilities_text[100];/**< Capabilities summary (NUL-terminated). */
 } aprs_station_capabilities_t;
 
 /**
- * @brief Structure for APRS bulletin.
- *
- * This structure holds the bulletin ID and message text.
+ * @brief Bulletin/announcement wrapper using the message format.
  */
 typedef struct {
-    char bulletin_id[5];  ///< Bulletin ID, e.g., "BLN1", null-terminated.
-    char *message;        ///< Message text, up to 67 characters, null-terminated.
-    char *message_number; ///< Optional message number for acknowledgment, up to 5 characters, null-terminated.
+    char bulletin_id[5];        /**< Bulletin ID (e.g., "BLN1"). */
+    char *message;              /**< Message text (malloc'd by decoder). */
+    char *message_number;       /**< Optional message number (malloc'd). */
 } aprs_bulletin_t;
 
 /**
- * @brief Structure for APRS item report.
- *
- * This structure holds the item name, live/killed status, position, symbol, and optional comment.
+ * @brief APRS item report (DTI ')').
  */
 typedef struct {
-    char name[10];        ///< Item name, null-terminated, up to 9 characters.
-    bool is_live;         ///< True if the item is live, false if killed.
-    double latitude;      ///< Latitude in decimal degrees (-90 to 90).
-    double longitude;     ///< Longitude in decimal degrees (-180 to 180).
-    char symbol_table;    ///< Symbol table identifier ('/' or '\').
-    char symbol_code;     ///< Symbol code (printable ASCII).
-    bool has_course_speed; ///< Flag indicating if course and speed are included.
-    int course;           ///< Course in degrees (0-360), if has_course_speed is true.
-    int speed;            ///< Speed in knots (>=0), if has_course_speed is true.
-    bool has_phg;         ///< Flag indicating if PHG data is included.
-    aprs_phg_t phg;       ///< PHG data (power/height/gain/directivity), values -1 if not provided.
-    char *comment;        ///< Optional comment field, null-terminated.
-    bool killed;          // false = live (*), true = killed (_)
-    char timestamp[8];    // DDHHMM[z|l] + NULL
+    char name[10];              /**< Item name (up to 9 chars + NUL). */
+    bool is_live;               /**< True for live item, false for killed. */
+    double latitude;            /**< Latitude. */
+    double longitude;           /**< Longitude. */
+    char symbol_table;          /**< Symbol table. */
+    char symbol_code;           /**< Symbol code. */
+    bool has_course_speed;      /**< True if course/speed present. */
+    int course;                 /**< Course (degrees). */
+    int speed;                  /**< Speed (knots). */
+    bool has_phg;               /**< True if PHG is present. */
+    aprs_phg_t phg;             /**< Optional PHG. */
+    char *comment;              /**< Optional comment (malloc'd). */
+    bool killed;                /**< False = live ('*'), true = killed ('_'). */
+    char timestamp[8];          /**< "DDHHMMz" or local variant. */
 } aprs_item_report_t;
 
+/**
+ * @brief Raw GPS/NMEA payload (DTI '$').
+ */
 typedef struct {
-    char *raw_data;       // The raw NMEA sentence or data
-    size_t data_len;      // Length of the raw data
+    char *raw_data;             /**< NMEA sentence or raw GPS data (malloc'd). */
+    size_t data_len;            /**< Number of bytes in @ref raw_data. */
 } aprs_raw_gps_t;
 
+/**
+ * @brief Maidenhead grid locator beacon (DTI '[').
+ */
 typedef struct {
-    char grid_square[7];  // Grid square code, up to 6 characters + null terminator
-    char *comment;        // Optional comment
+    char grid_square[7];        /**< 2–6 character grid (plus NUL). */
+    char *comment;              /**< Optional comment (malloc'd). */
 } aprs_grid_square_t;
 
+/**
+ * @brief Direction Finding (DF) report (DTI '+').
+ */
 typedef struct {
-    int bearing;          // Bearing in degrees (0-359)
-    int signal_strength;  // Signal strength (e.g., 0-9)
-    char *comment;        // Optional comment
+    int bearing;                /**< Bearing in degrees (0..359). */
+    int signal_strength;        /**< Signal strength (implementation-defined scale). */
+    char *comment;              /**< Optional comment (malloc'd). */
 } aprs_df_report_t;
 
+/**
+ * @brief Arbitrary test/invalid payload (DTI ',').
+ */
 typedef struct {
-    char *data;           // The packet data
-    size_t data_len;      // Length of the data
+    char *data;                 /**< Opaque data (malloc'd). */
+    size_t data_len;            /**< Length in bytes. */
 } aprs_test_packet_t;
 
+/* =========================
+ *       Encode/Decode
+ * ========================= */
+
+/** @name Bulletins / Items / Messages
+ *  @{
+ */
 /**
- * @brief Encode an APRS bulletin.
- *
- * This function encodes a bulletin into the information field, using the bulletin ID as the addressee.
- *
- * @param info Output buffer for the information field.
- * @param len Size of the output buffer.
- * @param data Pointer to the bulletin data structure.
- * @return Number of bytes written to the buffer, or -1 on error.
+ * @brief Encode a bulletin message into an APRS information field (DTI ':').
+ * @param info Output buffer for the information field (NUL-terminated on success).
+ * @param len  Size of @p info in bytes.
+ * @param data Pointer to bulletin descriptor.
+ * @return Number of characters written on success; negative on error.
  */
 int aprs_encode_bulletin(char *info, size_t len, const aprs_bulletin_t *data);
 
 /**
- * @brief Encode an APRS item report.
- *
- * This function encodes an item report into the information field.
- *
- * @param info Output buffer for the information field.
- * @param len Size of the output buffer.
- * @param data Pointer to the item report data structure.
- * @return Number of bytes written to the buffer, or -1 on error.
+ * @brief Encode an item report (DTI ')').
+ * @param info Output buffer (NUL-terminated on success).
+ * @param len  Size of @p info in bytes.
+ * @param data Item data to encode.
+ * @return Number of characters written; negative on error.
  */
 int aprs_encode_item_report(char *info, size_t len, const aprs_item_report_t *data);
 
 /**
- * @brief Check if a decoded message is a bulletin.
- *
- * This function checks if the addressee starts with "BLN" followed by a digit.
- *
- * @param msg Pointer to the decoded message structure.
- * @return True if the message is a bulletin, false otherwise.
+ * @brief Determine if a decoded message is a bulletin/announcement.
+ * @param msg Decoded message structure.
+ * @retval true  Message matches bulletin format.
+ * @retval false Regular message.
  */
 bool aprs_is_bulletin(const aprs_message_t *msg);
 
 /**
- * @brief Decode an APRS item report.
- *
- * This function decodes an item report from the information field into a structure.
- *
- * @param info Input buffer containing the information field.
- * @param data Pointer to the item report data structure to fill.
- * @return 0 on success, -1 on error.
+ * @brief Decode an item report from an info field.
+ * @param info Input NUL-terminated info string (without header/AX.25).
+ * @param data Output structure to fill. Pointers may be allocated.
+ * @return 0 on success; negative on error.
  */
 int aprs_decode_item_report(const char *info, aprs_item_report_t *data);
+/** @} */
 
+/** @name Position helpers
+ *  @{
+ */
 /**
- * @brief Convert latitude to APRS format.
- *
- * This function converts a latitude value in decimal degrees to the APRS format string (ddmm.mmN/S), with an optional ambiguity level.
- *
- * @param lat Latitude in decimal degrees (-90 to 90).
- * @param ambiguity Level of ambiguity (0-4), where 0 is no ambiguity.
- * @return Pointer to a static string containing the formatted latitude, or NULL on error.
- * @note The returned string is stored in a static buffer and will be overwritten on subsequent calls.
+ * @brief Convert latitude to APRS "DDMM.mmN/S" text with ambiguity.
+ * @param lat        Latitude in decimal degrees.
+ * @param ambiguity  Ambiguity level (0..4).
+ * @return Pointer to an internal/static buffer containing the formatted string.
  */
 char* lat_to_aprs(double lat, int ambiguity);
 
 /**
- * @brief Convert longitude to APRS format.
- *
- * This function converts a longitude value in decimal degrees to the APRS format string (dddmm.mmE/W), with an optional ambiguity level.
- *
- * @param lon Longitude in decimal degrees (-180 to 180).
- * @param ambiguity Level of ambiguity (0-4), where 0 is no ambiguity.
- * @return Pointer to a static string containing the formatted longitude, or NULL on error.
- * @note The returned string is stored in a static buffer and will be overwritten on subsequent calls.
+ * @brief Convert longitude to APRS "DDDMM.mmE/W" text with ambiguity.
+ * @param lon        Longitude in decimal degrees.
+ * @param ambiguity  Ambiguity level (0..4).
+ * @return Pointer to an internal/static buffer containing the formatted string.
  */
 char* lon_to_aprs(double lon, int ambiguity);
 
 /**
- * @brief Encode an APRS position report without timestamp.
- *
- * This function encodes a position report (with or without messaging capability) into the information field, including optional course and speed.
- *
- * @param info Output buffer for the information field.
- * @param len Size of the output buffer.
- * @param data Pointer to the position data structure.
- * @return Number of bytes written to the buffer, or -1 on error.
+ * @brief Encode a position report without timestamp (DTIs '!' or '=').
+ * @param info Output buffer.
+ * @param len  Buffer size in bytes.
+ * @param data Position to encode.
+ * @return Characters written; negative on error.
  */
 int aprs_encode_position_no_ts(char *info, size_t len, const aprs_position_no_ts_t *data);
 
 /**
- * @brief Encode an APRS message packet.
- *
- * This function encodes a message packet into the information field, including addressee, message text, and optional message number.
- *
- * @param info Output buffer for the information field.
- * @param len Size of the output buffer.
- * @param data Pointer to the message data structure.
- * @return Number of bytes written to the buffer, or -1 on error.
- */
-int aprs_encode_message(char *info, size_t len, const aprs_message_t *data);
-
-/**
- * @brief Decode an APRS position report without timestamp.
- *
- * This function decodes a position report from the information field into a structure.
- *
- * @param info Input buffer containing the information field.
- * @param data Pointer to the position data structure to fill.
- * @return 0 on success, -1 on error.
+ * @brief Decode a position report without timestamp.
+ * @param info Input NUL-terminated info field string.
+ * @param data Output structure (pointers may be allocated).
+ * @return 0 on success; negative on error.
  */
 int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *data);
 
 /**
- * @brief Decode an APRS message packet.
- *
- * This function decodes a message packet from the information field into a structure.
- *
- * @param info Input buffer containing the information field.
- * @param data Pointer to the message data structure to fill.
- * @return 0 on success, -1 on error.
- */
-int aprs_decode_message(const char *info, aprs_message_t *data);
-
-/**
- * @brief Parse latitude from APRS format string.
- *
- * This function parses a latitude string in APRS format (ddmm.mmN/S) and returns it in decimal degrees.
- *
- * @param str Input string in APRS latitude format.
- * @param ambiguity Pointer to store the ambiguity level (0-4), if needed.
- * @return Latitude in decimal degrees, or NAN on error.
- */
-double aprs_parse_lat(const char *str, int *ambiguity);
-
-/**
- * @brief Parse longitude from APRS format string.
- *
- * This function parses a longitude string in APRS format (dddmm.mmE/W) and returns it in decimal degrees.
- *
- * @param str Input string in APRS longitude format.
- * @param ambiguity Pointer to store the ambiguity level (0-4), if needed.
- * @return Longitude in decimal degrees, or NAN on error.
- */
-double aprs_parse_lon(const char *str, int *ambiguity);
-
-/**
- * @brief Encode an APRS weather report.
- *
- * This function encodes a weather report packet into the information field, including timestamp and weather data.
- *
- * @param info Output buffer for the information field.
- * @param len Size of the output buffer.
- * @param data Pointer to the weather report structure.
- * @return Number of bytes written to the buffer, or -1 on error.
- */
-int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report_t *data);
-
-/**
- * @brief Decode an APRS weather report.
- *
- * This function decodes a weather report packet from the information field into a structure.
- *
- * @param info Input buffer containing the information field.
- * @param data Pointer to the weather report structure to fill.
- * @return 0 on success, -1 on error.
- */
-int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data);
-
-/**
- * @brief Encode an APRS object report.
- *
- * This function encodes an object report packet into the information field, including name, timestamp, and position.
- *
- * @param info Output buffer for the information field.
- * @param len Size of the output buffer.
- * @param data Pointer to the object report structure.
- * @return Number of bytes written to the buffer, or -1 on error.
- */
-int aprs_encode_object_report(char *info, size_t len, const aprs_object_report_t *data);
-
-/**
- * @brief Decode an APRS object report.
- *
- * This function decodes an object report packet from the information field into a structure.
- *
- * @param info Input buffer containing the information field.
- * @param data Pointer to the object report structure to fill.
- * @return 0 on success, -1 on error.
- */
-int aprs_decode_object_report(const char *info, aprs_object_report_t *data);
-
-/**
- * @brief Encode an APRS position report with timestamp.
- *
- * This function encodes a timestamped position report into the information field.
- *
- * @param info Output buffer for the information field.
- * @param len Size of the output buffer.
- * @param data Pointer to the position data structure.
- * @return Number of bytes written to the buffer, or -1 on error.
+ * @brief Encode a position report with timestamp (DTIs '/' or '@').
+ * @param info Output buffer.
+ * @param len  Buffer size in bytes.
+ * @param data Position to encode (timestamp field must be filled).
+ * @return Characters written; negative on error.
  */
 int aprs_encode_position_with_ts(char *info, size_t len, const aprs_position_with_ts_t *data);
 
 /**
- * @brief Decode an APRS position report with timestamp.
- *
- * This function decodes a timestamped position report from the information field into a structure.
- *
- * @param info Input buffer containing the information field.
- * @param data Pointer to the position data structure to fill.
- * @return 0 on success, -1 on error.
+ * @brief Decode a position report with timestamp.
+ * @param info Input NUL-terminated info field string.
+ * @param data Output structure.
+ * @return 0 on success; negative on error.
  */
 int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data);
 
 /**
- * @brief Validate an APRS timestamp.
- *
- * This function checks if a timestamp is valid in DDHHMMz or other supported formats.
- *
- * @param timestamp Input timestamp string (e.g., "111111z").
- * @param zulu Flag indicating if the timestamp is in zulu (UTC) format.
- * @return true if the timestamp is valid, false otherwise.
+ * @brief Parse latitude from "DDMM.mmN/S" text and report ambiguity.
+ * @param str        Pointer to latitude string.
+ * @param ambiguity  Output ambiguity (0..4) or NULL to ignore.
+ * @return Decimal degrees; NaN on error.
  */
-bool aprs_validate_timestamp(const char *timestamp, bool zulu);
+double aprs_parse_lat(const char *str, int *ambiguity);
 
 /**
- * @brief Parse a specific weather field from APRS data.
- *
- * This function extracts a specific weather field (e.g., temperature, wind speed) from the input data.
- *
- * @param data Input buffer containing the weather data.
- * @param field_id Identifier of the field to parse (e.g., 't' for temperature).
- * @param value Output buffer to store the parsed value.
- * @param value_len Size of the output buffer.
- * @return Number of bytes written to the value buffer, or -1 on error.
+ * @brief Parse longitude from "DDDMM.mmE/W" text and report ambiguity.
+ * @param str        Pointer to longitude string.
+ * @param ambiguity  Output ambiguity (0..4) or NULL to ignore.
+ * @return Decimal degrees; NaN on error.
  */
-int aprs_parse_weather_field(const char *data, char field_id, char *value, size_t value_len);
+double aprs_parse_lon(const char *str, int *ambiguity);
+/** @} */
+
+/** @name Messages
+ *  @{
+ */
+/**
+ * @brief Encode a message (DTI ':').
+ * @param info Output buffer.
+ * @param len  Buffer size in bytes.
+ * @param data Message (addressee/text/optional number).
+ * @return Characters written; negative on error.
+ */
+int aprs_encode_message(char *info, size_t len, const aprs_message_t *data);
 
 /**
- * @brief Encode Mic-E destination address.
- *
- * This function encodes the latitude and message bits into the destination address for Mic-E packets.
- *
- * @param dest_str Output buffer for the encoded destination address (7 characters).
- * @param data Pointer to the Mic-E data structure.
- * @return 0 on success, -1 on error.
+ * @brief Decode a message (DTI ':').
+ * @param info Input NUL-terminated info field.
+ * @param data Output message structure (strings may be allocated).
+ * @return 0 on success; negative on error.
  */
-int aprs_encode_mice_destination(char *dest_str, const aprs_mice_t *data);
+int aprs_decode_message(const char *info, aprs_message_t *data);
+/** @} */
+
+/** @name Weather
+ *  @{
+ */
+/**
+ * @brief Encode a canonical APRS weather report (DTI '_').
+ * @param info Output buffer.
+ * @param len  Buffer size in bytes.
+ * @param data Weather values to encode.
+ * @return Characters written; negative on error.
+ */
+int aprs_encode_weather_report(char *info, size_t len, const aprs_weather_report_t *data);
 
 /**
- * @brief Encode Mic-E information field.
- *
- * This function encodes the longitude, speed, course, and symbol into the information field for Mic-E packets.
- *
- * @param info Output buffer for the information field.
- * @param len Size of the output buffer.
- * @param data Pointer to the Mic-E data structure.
- * @return Number of bytes written to the buffer, or -1 on error.
+ * @brief Decode a canonical APRS weather report (DTI '_').
+ * @param info Input NUL-terminated info field.
+ * @param data Output weather structure.
+ * @return 0 on success; negative on error.
  */
-int aprs_encode_mice_info(char *info, size_t len, const aprs_mice_t *data);
+int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data);
 
 /**
- * @brief Decode Mic-E destination address.
- *
- * This function decodes the latitude and message bits from the destination address of a Mic-E packet.
- *
- * @param dest_str Input destination address string.
- * @param data Pointer to the Mic-E data structure to fill.
- * @param message_bits Pointer to store the message bits.
- * @param ns Pointer to store the north/south indicator.
- * @param long_offset Pointer to store the longitude offset indicator.
- * @param we Pointer to store the west/east indicator.
- * @return 0 on success, -1 on error.
- */
-int aprs_decode_mice_destination(const char *dest_str, aprs_mice_t *data, int *message_bits, bool *ns, bool *long_offset, bool *we);
-
-/**
- * @brief Decode Mic-E information field.
- *
- * This function decodes the longitude, speed, course, and symbol from the information field of a Mic-E packet.
- *
- * @param info Input buffer containing the information field.
- * @param len Length of the input buffer.
- * @param data Pointer to the Mic-E data structure to fill.
- * @param long_offset Longitude offset indicator.
- * @param we West/east indicator.
- * @return 0 on success, -1 on error.
- */
-int aprs_decode_mice_info(const char *info, size_t len, aprs_mice_t *data, bool long_offset, bool we);
-
-/**
- * @brief Encode an APRS telemetry report.
- *
- * This function encodes a telemetry report packet into the information field.
- *
- * @param info Output buffer for the information field.
- * @param len Size of the output buffer.
- * @param data Pointer to the telemetry data structure.
- * @return Number of bytes written to the buffer, or -1 on error.
- */
-int aprs_encode_telemetry(char *info, size_t len, const aprs_telemetry_t *data);
-
-/**
- * @brief Decode an APRS telemetry report.
- *
- * This function decodes a telemetry report packet from the information field into a structure.
- *
- * @param info Input buffer containing the information field.
- * @param data Pointer to the telemetry data structure to fill.
- * @return 0 on success, -1 on error.
- */
-int aprs_decode_telemetry(const char *info, aprs_telemetry_t *data);
-
-/**
- * @brief Encode an APRS status report.
- *
- * This function encodes a status report packet into the information field, with optional timestamp.
- *
- * @param info Output buffer for the information field.
- * @param len Size of the output buffer.
- * @param data Pointer to the status data structure.
- * @return Number of bytes written to the buffer, or -1 on error.
- */
-int aprs_encode_status(char *info, size_t len, const aprs_status_t *data);
-
-/**
- * @brief Decode an APRS status report.
- *
- * This function decodes a status report packet from the information field into a structure.
- *
- * @param info Input buffer containing the information field.
- * @param data Pointer to the status data structure to fill.
- * @return 0 on success, -1 on error.
- */
-int aprs_decode_status(const char *info, aprs_status_t *data);
-
-/**
- * @brief Encode an APRS general query.
- *
- * This function encodes a general query packet into the information field.
- *
- * @param info Output buffer for the information field.
- * @param len Size of the output buffer.
- * @param data Pointer to the general query data structure.
- * @return Number of bytes written to the buffer, or -1 on error.
- */
-int aprs_encode_general_query(char *info, size_t len, const aprs_general_query_t *data);
-
-/**
- * @brief Decode an APRS general query.
- *
- * This function decodes a general query packet from the information field into a structure.
- *
- * @param info Input buffer containing the information field.
- * @param data Pointer to the general query data structure to fill.
- * @return 0 on success, -1 on error.
- */
-int aprs_decode_general_query(const char *info, aprs_general_query_t *data);
-
-/**
- * @brief Encode APRS station capabilities.
- *
- * This function encodes a station capabilities packet into the information field.
- *
- * @param info Output buffer for the information field.
- * @param len Size of the output buffer.
- * @param data Pointer to the station capabilities data structure.
- * @return Number of bytes written to the buffer, or -1 on error.
- */
-int aprs_encode_station_capabilities(char *info, size_t len, const aprs_station_capabilities_t *data);
-
-/**
- * @brief Decode APRS station capabilities.
- *
- * This function decodes a station capabilities packet from the information field into a structure.
- *
- * @param info Input buffer containing the information field.
- * @param data Pointer to the station capabilities data structure to fill.
- * @return 0 on success, -1 on error.
- */
-int aprs_decode_station_capabilities(const char *info, aprs_station_capabilities_t *data);
-
-/**
- * @brief Encode an APRS raw GPS data packet.
- *
- * This function encodes raw GPS data, such as NMEA sentences, into the APRS information field. The data is prefixed
- * with the raw GPS Data Type Indicator (DTI) '$'. The input data must start with "GP" (indicating a GPS-related
- * sentence) and be at least 3 characters long.
- *
- * @param info Output buffer for the information field where the encoded packet will be written.
- * @param len Size of the output buffer, which must be at least `data->data_len + 2` to accommodate the DTI, data,
- *            and null terminator.
- * @param data Pointer to the raw GPS data structure containing the NMEA sentence or similar data and its length.
- * @return Number of bytes written to the buffer (including the DTI), or -1 on error. Errors occur if:
- *         - `data` or `data->raw_data` is NULL,
- *         - `data->data_len` is less than 3,
- *         - `data->raw_data` does not start with "GP",
- *         - The buffer size `len` is insufficient.
- * @note The caller must ensure the output buffer is large enough to hold the DTI, the raw data, and a null terminator.
- * @see aprs_decode_raw_gps
- */
-int aprs_encode_raw_gps(char *info, size_t len, const aprs_raw_gps_t *data);
-
-/**
- * @brief Encode an APRS grid square report.
- *
- * This function encodes a Maidenhead grid square report into the APRS information field, prefixed with the '>'
- * character (used as a DTI in this implementation). The grid square code must be 4 or 6 characters long, followed
- * by a space and an optional comment. The total encoded length includes the DTI, grid square, space, and comment.
- *
- * @param info Output buffer for the information field where the encoded packet will be written.
- * @param len Size of the output buffer, which must be at least the length of the grid square plus comment, space,
- *            DTI, and null terminator.
- * @param data Pointer to the grid square data structure containing the grid square code and optional comment.
- * @return Number of bytes written to the buffer, or -1 on error. Errors occur if:
- *         - `data` is NULL,
- *         - `len` is too small,
- *         - `data->grid_square` is not 4 or 6 characters long.
- * @note The grid square length is strictly validated to be either 4 or 6 characters as per Maidenhead conventions.
- * @see aprs_decode_grid_square
- */
-int aprs_encode_grid_square(char *info, size_t len, const aprs_grid_square_t *data);
-
-/**
- * @brief Encode an APRS direction finding (DF) report.
- *
- * This function encodes a direction finding report into the APRS information field, prefixed with the '@' character
- * (used as a DTI in this implementation). The report includes a 3-digit bearing (000-359), a slash, a single-digit
- * signal strength (0-9) padded to 3 digits (e.g., "S00"), and an optional comment.
- *
- * @param info Output buffer for the information field where the encoded packet will be written.
- * @param len Size of the output buffer, which must be at least 8 (DTI + bearing + slash + signal strength) plus
- *            the comment length and null terminator.
- * @param data Pointer to the DF report data structure containing bearing, signal strength, and optional comment.
- * @return Number of bytes written to the buffer, or -1 on error. Errors occur if:
- *         - `data` is NULL,
- *         - `data->bearing` is not between 0 and 359,
- *         - `data->signal_strength` is not between 0 and 9,
- *         - `len` is insufficient.
- * @note The signal strength is encoded as a single digit followed by "00" (e.g., "500" for strength 5).
- * @see aprs_decode_df_report
- */
-int aprs_encode_df_report(char *info, size_t len, const aprs_df_report_t *data);
-
-/**
- * @brief Encode an APRS test packet.
- *
- * This function encodes a test packet with arbitrary data into the APRS information field, prefixed with the test
- * packet Data Type Indicator (DTI) ','. This is useful for testing APRS systems with custom or experimental data.
- *
- * @param info Output buffer for the information field where the encoded packet will be written.
- * @param len Size of the output buffer, which must be at least `data->data_len + 2` to accommodate the DTI, data,
- *            and null terminator.
- * @param data Pointer to the test packet data structure containing the arbitrary data and its length.
- * @return Number of bytes written to the buffer (including the DTI), or -1 on error. Errors occur if:
- *         - `len` is insufficient to hold the DTI, data, and null terminator.
- * @note No specific validation is performed on the content of `data->data`, allowing flexibility for testing purposes.
- * @see aprs_decode_test_packet
- */
-int aprs_encode_test_packet(char *info, size_t len, const aprs_test_packet_t *data);
-
-/**
- * @brief Decode an APRS raw GPS data packet.
- *
- * This function decodes raw GPS data from the APRS information field into a structure. The data must be prefixed
- * with the raw GPS Data Type Indicator (DTI) '$'. The decoded data is dynamically allocated and stored in the
- * provided structure.
- *
- * @param info Input buffer containing the information field with the encoded raw GPS data.
- * @param data Pointer to the raw GPS data structure to fill with the decoded NMEA sentence or data and its length.
- * @return 0 on success, -1 on error. Errors occur if:
- *         - The first character is not '$',
- *         - The input is empty after the DTI,
- *         - Memory allocation for `data->raw_data` fails.
- * @note The caller is responsible for freeing `data->raw_data` to prevent memory leaks.
- * @see aprs_encode_raw_gps
- */
-int aprs_decode_raw_gps(const char *info, aprs_raw_gps_t *data);
-
-/**
- * @brief Decode an APRS grid square report.
- *
- * This function decodes a grid square report from the APRS information field into a structure. The data must be
- * prefixed with '>' (used as a DTI in this implementation), followed by a 4- or 6-character grid square, a space,
- * and an optional comment. The decoded comment, if present, is dynamically allocated.
- *
- * @param info Input buffer containing the information field with the encoded grid square report.
- * @param data Pointer to the grid square data structure to fill with the grid square code and optional comment.
- * @return 0 on success, -1 on error. Errors occur if:
- *         - The first character is not '>',
- *         - The input length is less than 6 (DTI + 4 chars + space),
- *         - No space separator is found,
- *         - The grid square length is not 4 or 6,
- *         - Memory allocation for `data->comment` fails (if a comment is present).
- * @note The caller must free `data->comment` if it is non-NULL to prevent memory leaks.
- * @see aprs_encode_grid_square
- */
-int aprs_decode_grid_square(const char *info, aprs_grid_square_t *data);
-
-/**
- * @brief Decode an APRS direction finding (DF) report.
- *
- * This function decodes a direction finding report from the APRS information field into a structure. The data must
- * be prefixed with '@' (used as a DTI in this implementation), followed by a 3-digit bearing (000-359), a slash,
- * a 3-digit signal strength field (e.g., "S00" where S is 0-9), and an optional comment. The decoded comment, if
- * present, is dynamically allocated.
- *
- * @param info Input buffer containing the information field with the encoded DF report.
- * @param data Pointer to the DF report data structure to fill with bearing, signal strength, and optional comment.
- * @return 0 on success, -1 on error. Errors occur if:
- *         - The first character is not '@',
- *         - The input length is less than 8 (DTI + bearing + slash + signal strength),
- *         - The separator is not '/',
- *         - `bearing` is not between 0 and 359,
- *         - `signal_strength` is not between 0 and 9,
- *         - Memory allocation for `data->comment` fails (if a comment is present).
- * @note The signal strength is extracted from the first digit of the 3-digit field (e.g., "500" yields 5).
- * @note The caller must free `data->comment` if it is non-NULL to prevent memory leaks.
- * @see aprs_encode_df_report
- */
-int aprs_decode_df_report(const char *info, aprs_df_report_t *data);
-
-/**
- * @brief Decode an APRS test packet.
- *
- * This function decodes a test packet from the APRS information field into a structure. The data must be prefixed
- * with the test packet Data Type Indicator (DTI) ','. The decoded data is dynamically allocated and stored in the
- * provided structure.
- *
- * @param info Input buffer containing the information field with the encoded test packet.
- * @param data Pointer to the test packet data structure to fill with the arbitrary data and its length.
- * @return 0 on success, -1 on error. Errors occur if:
- *         - The first character is not ',',
- *         - Memory allocation for `data->data` fails.
- * @note The caller is responsible for freeing `data->data` to prevent memory leaks.
- * @see aprs_encode_test_packet
- */
-int aprs_decode_test_packet(const char *info, aprs_test_packet_t *data);
-
-/**
- * @brief Encode an APRS Base91 compressed position report.
- *
- * This function encodes a compressed position report using Base91 encoding into the information field.
- * The compressed format is: DTI + 4-char lat + 4-char lon + symbol + 2-char data + compression_type + comment
- *
- * @param info Output buffer for the information field.
- * @param len Size of the output buffer.
- * @param data Pointer to the compressed position data structure.
- * @return Number of bytes written to the buffer, or -1 on error.
- */
-int aprs_encode_compressed_position(char *info, size_t len, const aprs_compressed_position_t *data);
-
-/**
- * @brief Decode an APRS Base91 compressed position report.
- *
- * This function decodes a Base91 compressed position report from the information field into a structure.
- *
- * @param info Input buffer containing the information field.
- * @param data Pointer to the compressed position data structure to fill.
- * @return 0 on success, -1 on error.
- */
-int aprs_decode_compressed_position(const char *info, aprs_compressed_position_t *data);
-
-/**
- * @brief Check if an APRS packet contains a compressed position.
- *
- * This function checks if the given APRS information field contains a Base91 compressed position.
- *
- * @param info Input buffer containing the information field.
- * @return true if the packet contains a compressed position, false otherwise.
- */
-bool aprs_is_compressed_position(const char *info);
-
-/**
- * @brief Free memory allocated for compressed position structure.
- *
- * This function frees the dynamically allocated comment field in the compressed position structure.
- *
- * @param data Pointer to the compressed position data structure.
- */
-void aprs_free_compressed_position(aprs_compressed_position_t *data);
-
-/**
- * @brief Decode Peet Bros Weather Format 1
- *
- * This function parses a Peet Bros Instruments weather packet (format 1)
- * from the given APRS information field.
- *
- * @param info  Null-terminated string containing the APRS info field
- *              starting with the Peet1 prefix character.
- * @param data  Pointer to an aprs_weather_report_t structure that will
- *              be filled with the decoded weather data.
- * @return      0 on success, or a negative error code on failure.
+ * @brief Decode Peet Bros raw weather format #1 (DTI '#').
+ * @param info Input NUL-terminated info field.
+ * @param data Output weather values.
+ * @return 0 on success; negative on error.
  */
 int aprs_decode_peet1(const char *info, aprs_weather_report_t *data);
 
 /**
- * @brief Decode Peet Bros Weather Format 2
- *
- * This function parses a Peet Bros Instruments weather packet (format 2)
- * from the given APRS information field.
- *
- * @param info  Null-terminated string containing the APRS info field
- *              starting with the Peet2 prefix character.
- * @param data  Pointer to an aprs_weather_report_t structure that will
- *              be filled with the decoded weather data.
- * @return      0 on success, or a negative error code on failure.
+ * @brief Decode Peet Bros raw weather format #2 (DTI '*').
+ * @param info Input NUL-terminated info field.
+ * @param data Output weather values.
+ * @return 0 on success; negative on error.
  */
 int aprs_decode_peet2(const char *info, aprs_weather_report_t *data);
 
 /**
- * @brief Encode Peet Bros Weather Format 1
- *
- * This function formats the given weather data into the Peet Bros
- * Instruments APRS weather string (format 1) and writes it into the
- * destination buffer.
- *
- * @param dst   Pointer to the buffer where the encoded string will be written.
- * @param len   Size of the destination buffer in bytes.
- * @param data  Pointer to an aprs_weather_report_t structure containing
- *              the weather data to encode.
- * @return      Number of characters written on success, or a negative
- *              error code if the buffer is too small or data is invalid.
+ * @brief Encode Peet Bros raw weather format #1 (DTI '#').
+ * @param dst  Output buffer.
+ * @param len  Buffer size in bytes.
+ * @param data Weather values to encode.
+ * @return Characters written; negative on error.
  */
 int aprs_encode_peet1(char *dst, int len, const aprs_weather_report_t *data);
 
 /**
- * @brief Encode Peet Bros Weather Format 2
- *
- * This function formats the given weather data into the Peet Bros
- * Instruments APRS weather string (format 2) and writes it into the
- * destination buffer.
- *
- * @param dst   Pointer to the buffer where the encoded string will be written.
- * @param len   Size of the destination buffer in bytes.
- * @param data  Pointer to an aprs_weather_report_t structure containing
- *              the weather data to encode.
- * @return      Number of characters written on success, or a negative
- *              error code if the buffer is too small or data is invalid.
+ * @brief Encode Peet Bros raw weather format #2 (DTI '*').
+ * @param dst  Output buffer.
+ * @param len  Buffer size in bytes.
+ * @param data Weather values to encode.
+ * @return Characters written; negative on error.
  */
 int aprs_encode_peet2(char *dst, int len, const aprs_weather_report_t *data);
 
 /**
- * @brief Merge Position and Weather Data
- *
- * This function combines a decoded position report (without timestamp)
- * and a weather report into a single APRS weather packet string.  It
- * is used when weather data follows immediately after a position report
- * in the same APRS information field.
- *
- * @param pos   Pointer to an aprs_position_no_ts_t structure containing
- *              the decoded position.
- * @param w     Pointer to an aprs_weather_report_t structure that will be
- *              filled with the merged weather data.
- * @return      0 on success, or a negative error code on failure.
+ * @brief Merge a decoded position (no-ts) into a weather report.
+ * @param pos Decoded position (no timestamp).
+ * @param w   Output/updated weather report that gains lat/lon/symbols.
+ * @return 0 on success; negative on error.
  */
 int aprs_decode_position_weather(const aprs_position_no_ts_t *pos, aprs_weather_report_t *w);
+/** @} */
+
+/** @name Objects / Items
+ *  @{
+ */
+/**
+ * @brief Encode an object report (DTI ';').
+ * @param info Output buffer.
+ * @param len  Buffer size in bytes.
+ * @param data Object fields to encode.
+ * @return Characters written; negative on error.
+ */
+int aprs_encode_object_report(char *info, size_t len, const aprs_object_report_t *data);
 
 /**
- * @brief Handle Directed Station Query
- *
- * Processes a directed query message addressed to this station.  Extracts
- * the query payload and formats an appropriate response into the info buffer.
- *
- * @param msg            Pointer to the received aprs_message_t containing
- *                       the query message.
- * @param info           Destination buffer to receive the response info field.
- * @param len            Size of the info buffer in bytes.
- * @param local_station  Information about the local station handling the query.
- * @return               Number of characters written on success, or a negative
- *                       error code if the buffer is too small or the query is invalid.
+ * @brief Decode an object report (DTI ';').
+ * @param info Input NUL-terminated info field.
+ * @param data Output object structure.
+ * @return 0 on success; negative on error.
+ */
+int aprs_decode_object_report(const char *info, aprs_object_report_t *data);
+/** @} */
+
+/** @name Validation & helpers
+ *  @{
+ */
+/**
+ * @brief Validate a timestamp string in APRS format.
+ * @param timestamp String to validate ("DDHHMMz" or local variant).
+ * @param zulu      true to require 'z' (UTC); false to allow local.
+ * @retval true  Valid.
+ * @retval false Invalid.
+ */
+bool aprs_validate_timestamp(const char *timestamp, bool zulu);
+
+/**
+ * @brief Extract a weather subfield by field ID (e.g., 't' for temperature).
+ * @param data       Info field text to scan.
+ * @param field_id   Field identifier character.
+ * @param value      Output buffer for the extracted value as text.
+ * @param value_len  Size of @p value buffer.
+ * @return 0 if found and copied; negative if not found or invalid.
+ */
+int aprs_parse_weather_field(const char *data, char field_id, char *value, size_t value_len);
+/** @} */
+
+/** @name Mic-E
+ *  @{
+ */
+/**
+ * @brief Encode Mic-E destination field from logical values.
+ * @param dest_str Output buffer to receive destination callsign field text.
+ * @param data     Mic-E data (lat/lon/course/speed/symbol/message code).
+ * @return Characters written; negative on error.
+ */
+int aprs_encode_mice_destination(char *dest_str, const aprs_mice_t *data);
+
+/**
+ * @brief Encode Mic-E information field from logical values.
+ * @param info Output buffer.
+ * @param len  Buffer size in bytes.
+ * @param data Mic-E data.
+ * @return Characters written; negative on error.
+ */
+int aprs_encode_mice_info(char *info, size_t len, const aprs_mice_t *data);
+
+/**
+ * @brief Decode Mic-E destination field into logical values.
+ * @param dest_str    Source destination callsign field text.
+ * @param data        Output Mic-E data.
+ * @param message_bits Output Mic-E message bits.
+ * @param ns          Output hemisphere flag (true = North).
+ * @param long_offset Output long/lat offset flag (Mic-E encoding detail).
+ * @param we          Output hemisphere flag (true = West).
+ * @return 0 on success; negative on error.
+ */
+int aprs_decode_mice_destination(const char *dest_str, aprs_mice_t *data, int *message_bits, bool *ns, bool *long_offset, bool *we);
+
+/**
+ * @brief Decode Mic-E info field into logical values.
+ * @param info       Input info field.
+ * @param len        Length in bytes of @p info.
+ * @param data       Output Mic-E data.
+ * @param long_offset Flag from destination decode (encoding detail).
+ * @param we         Hemisphere flag from destination decode.
+ * @return 0 on success; negative on error.
+ */
+int aprs_decode_mice_info(const char *info, size_t len, aprs_mice_t *data, bool long_offset, bool we);
+/** @} */
+
+/** @name Telemetry / Status / Queries / Capabilities
+ *  @{
+ */
+/**
+ * @brief Encode telemetry report (DTI 'T').
+ * @param info Output buffer.
+ * @param len  Buffer size in bytes.
+ * @param data Telemetry values (sequence/analog[5]/digital).
+ * @return Characters written; negative on error.
+ */
+int aprs_encode_telemetry(char *info, size_t len, const aprs_telemetry_t *data);
+
+/**
+ * @brief Decode telemetry report (DTI 'T').
+ * @param info Input NUL-terminated info field.
+ * @param data Output telemetry structure.
+ * @return 0 on success; negative on error.
+ */
+int aprs_decode_telemetry(const char *info, aprs_telemetry_t *data);
+
+/**
+ * @brief Encode status report (DTI '>').
+ * @param info Output buffer.
+ * @param len  Buffer size in bytes.
+ * @param data Status (timestamp optional).
+ * @return Characters written; negative on error.
+ */
+int aprs_encode_status(char *info, size_t len, const aprs_status_t *data);
+
+/**
+ * @brief Decode status report (DTI '>').
+ * @param info Input NUL-terminated info field.
+ * @param data Output status structure.
+ * @return 0 on success; negative on error.
+ */
+int aprs_decode_status(const char *info, aprs_status_t *data);
+
+/**
+ * @brief Encode a general query (DTI '?').
+ * @param info Output buffer.
+ * @param len  Buffer size in bytes.
+ * @param data Query descriptor.
+ * @return Characters written; negative on error.
+ */
+int aprs_encode_general_query(char *info, size_t len, const aprs_general_query_t *data);
+
+/**
+ * @brief Decode a general query (DTI '?').
+ * @param info Input NUL-terminated info field.
+ * @param data Output query structure.
+ * @return 0 on success; negative on error.
+ */
+int aprs_decode_general_query(const char *info, aprs_general_query_t *data);
+
+/**
+ * @brief Encode station capabilities (DTI '<').
+ * @param info Output buffer.
+ * @param len  Buffer size in bytes.
+ * @param data Capabilities text.
+ * @return Characters written; negative on error.
+ */
+int aprs_encode_station_capabilities(char *info, size_t len, const aprs_station_capabilities_t *data);
+
+/**
+ * @brief Decode station capabilities (DTI '<').
+ * @param info Input NUL-terminated info field.
+ * @param data Output capabilities structure.
+ * @return 0 on success; negative on error.
+ */
+int aprs_decode_station_capabilities(const char *info, aprs_station_capabilities_t *data);
+
+/**
+ * @brief Handle a directed query and synthesize an APRS-compliant reply.
+ * @param msg           Parsed incoming message (addressee/query text).
+ * @param info          Output buffer to hold the reply info field.
+ * @param len           Size of @p info in bytes.
+ * @param local_station Local station information used to build the reply.
+ * @return Characters written into @p info; negative on error or unhandled query.
  */
 int aprs_handle_directed_query(const aprs_message_t *msg, char *info, size_t len, aprs_station_info_t local_station);
+/** @} */
+
+/** @name Raw GPS / Grid / DF / Test
+ *  @{
+ */
+/**
+ * @brief Encode raw GPS/NMEA (DTI '$').
+ * @param info Output buffer.
+ * @param len  Buffer size.
+ * @param data Raw GPS payload.
+ * @return Characters written; negative on error.
+ */
+int aprs_encode_raw_gps(char *info, size_t len, const aprs_raw_gps_t *data);
 
 /**
- * @brief Encode Position Packet
- *
- * Serializes a PositionReport structure into an APRS position packet
- * information field.  The output string will include latitude, longitude,
- * symbol table, symbol code, and optional comment or status.
- *
- * @param pos   Pointer to a PositionReport structure containing all
- *              necessary fields for encoding.
- * @param out   Destination buffer where the APRS info string will be written.
- *              Must be large enough to hold the full packet string.
+ * @brief Encode Maidenhead grid beacon (DTI '[').
+ * @param info Output buffer.
+ * @param len  Buffer size.
+ * @param data Grid square payload.
+ * @return Characters written; negative on error.
+ */
+int aprs_encode_grid_square(char *info, size_t len, const aprs_grid_square_t *data);
+
+/**
+ * @brief Encode DF report (DTI '+').
+ * @param info Output buffer.
+ * @param len  Buffer size.
+ * @param data DF values.
+ * @return Characters written; negative on error.
+ */
+int aprs_encode_df_report(char *info, size_t len, const aprs_df_report_t *data);
+
+/**
+ * @brief Encode test/invalid packet (DTI ',').
+ * @param info Output buffer.
+ * @param len  Buffer size.
+ * @param data Opaque test payload.
+ * @return Characters written; negative on error.
+ */
+int aprs_encode_test_packet(char *info, size_t len, const aprs_test_packet_t *data);
+
+/**
+ * @brief Decode raw GPS/NMEA.
+ * @param info Input NUL-terminated info field.
+ * @param data Output raw GPS payload (strings may be allocated).
+ * @return 0 on success; negative on error.
+ */
+int aprs_decode_raw_gps(const char *info, aprs_raw_gps_t *data);
+
+/**
+ * @brief Decode Maidenhead grid beacon.
+ * @param info Input NUL-terminated info field.
+ * @param data Output grid payload (comment may be allocated).
+ * @return 0 on success; negative on error.
+ */
+int aprs_decode_grid_square(const char *info, aprs_grid_square_t *data);
+
+/**
+ * @brief Decode DF report.
+ * @param info Input NUL-terminated info field.
+ * @param data Output DF values.
+ * @return 0 on success; negative on error.
+ */
+int aprs_decode_df_report(const char *info, aprs_df_report_t *data);
+
+/**
+ * @brief Decode test/invalid packet.
+ * @param info Input NUL-terminated info field.
+ * @param data Output payload.
+ * @return 0 on success; negative on error.
+ */
+int aprs_decode_test_packet(const char *info, aprs_test_packet_t *data);
+/** @} */
+
+/** @name Compressed positions
+ *  @{
+ */
+/**
+ * @brief Encode a compressed position (Base-91).
+ * @param info Output buffer.
+ * @param len  Buffer size.
+ * @param data Compressed position parameters.
+ * @return Characters written; negative on error.
+ */
+int aprs_encode_compressed_position(char *info, size_t len, const aprs_compressed_position_t *data);
+
+/**
+ * @brief Decode a compressed position (Base-91).
+ * @param info Input NUL-terminated info field.
+ * @param data Output structure (comment may be malloc'd).
+ * @return 0 on success; negative on error.
+ */
+int aprs_decode_compressed_position(const char *info, aprs_compressed_position_t *data);
+
+/**
+ * @brief Check whether an info field is a compressed position.
+ * @param info Input NUL-terminated info field.
+ * @retval true  Looks like a compressed position.
+ * @retval false Otherwise.
+ */
+bool aprs_is_compressed_position(const char *info);
+
+/**
+ * @brief Free any dynamic memory owned by a decoded compressed position.
+ * @param data Structure previously filled by a decoder.
+ */
+void aprs_free_compressed_position(aprs_compressed_position_t *data);
+/** @} */
+
+/** @name Misc parsing/encoding helpers used by higher-level code
+ *  @{
+ */
+/**
+ * @brief Compose a classic (uncompressed) position packet string.
+ * @param pos Position report fields.
+ * @param out Output buffer (sized by caller).
  */
 void encodePositionPacket(const aprs_position_report_t *pos, char *out);
 
 /**
- * @brief Parse Altitude and PHG from Comment
- *
- * Extracts altitude and power/height/gain (PHG) information embedded
- * in a position packet comment.  The PHG data typically follows the
- * format "PHGxxxHyyGzz".
- *
- * @param comment  Null-terminated string containing the comment field from
- *                 an APRS position report.
- * @param pos      Pointer to a PositionReport structure where extracted
- *                 altitude and PHG values will be stored.
+ * @brief Parse altitude/PHG hints from a free-form comment into a position.
+ * @param comment Source comment text.
+ * @param pos     Position object updated in-place.
  */
 void parseAltitudePHG(const char *comment, aprs_position_report_t *pos);
 
 /**
- * @brief Parse User-Defined Packet
- *
- * Handles an APRS user-defined data packet, which begins with the '{'
- * data type identifier.  Parses any application-specific data fields
- * following the identifier.
- *
- * @param info  Null-terminated string containing the info field starting
- *              after the '{' character.
+ * @brief Parse the user-defined format payload (DTI '{') for diagnostics.
+ * @param info Pointer to text after the '{' character.
  */
 void parse_user_defined(const char *info);
 
+/**
+ * @brief Parse a DX spot payload for diagnostics.
+ * @param info Input info text to parse.
+ */
 void parse_dx_spot(const char *info);
+
+/**
+ * @brief Encode a user-defined format payload (DTI '{').
+ * @param info Output buffer.
+ * @param len  Buffer size.
+ * @param data User-defined payload.
+ * @return Characters written; negative on error.
+ */
 int aprs_encode_user_defined(char *info, size_t len, const aprs_user_defined_format_t *data);
+
+/**
+ * @brief Encode a third-party packet (DTI '}') with header + inner info.
+ * @param info       Output buffer.
+ * @param len        Buffer size.
+ * @param header     Outer header/path text.
+ * @param inner_info Encapsulated info field text.
+ * @return Characters written; negative on error.
+ */
 int aprs_encode_third_party(char *info, size_t len, const char *header, const char *inner_info);
+
+/**
+ * @brief Decode a user-defined format payload.
+ * @param info Input NUL-terminated text following '{'.
+ * @param out  Output structure.
+ * @return 0 on success; negative on error.
+ */
 int aprs_decode_user_defined(const char *info, aprs_user_defined_format_t *out);
+
+/**
+ * @brief Decode a third-party packet wrapper (extract header/inner info).
+ * @param info Input NUL-terminated info field (starting after '}').
+ * @param out  Output wrapper (strings copied).
+ * @return 0 on success; negative on error.
+ */
 int aprs_decode_third_party(const char *info, aprs_third_party_packet_t *out);
+/** @} */
 
 #endif /* APRS_H_ */
+

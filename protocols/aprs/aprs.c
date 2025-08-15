@@ -1099,28 +1099,28 @@ int aprs_decode_object_report(const char *info, aprs_object_report_t *data) {
 int aprs_encode_position_with_ts(char *info, size_t len, const aprs_position_with_ts_t *data) {
     // Validate inputs
     if (data->dti != '/' && data->dti != '@') {
-        printf("Error: Invalid DTI '%c'\n", data->dti);
+        //printf("Error: Invalid DTI '%c'\n", data->dti);
         return -1;
     }
     if (strlen(data->timestamp) != 7 || (data->timestamp[6] != 'z' && data->timestamp[6] != 'l')) {
-        printf("Error: Invalid timestamp '%s'\n", data->timestamp);
-        return -1;
+        //printf("Error: Invalid timestamp '%s'\n", data->timestamp);
+        return -2;
     }
     if (data->symbol_table != '/' && data->symbol_table != '\\') {
-        printf("Error: Invalid symbol table '%c'\n", data->symbol_table);
-        return -1;
+        //printf("Error: Invalid symbol table '%c'\n", data->symbol_table);
+        return -3;
     }
     if (!isprint(data->symbol_code)) {
-        printf("Error: Invalid symbol code '%c'\n", data->symbol_code);
-        return -1;
+        //printf("Error: Invalid symbol code '%c'\n", data->symbol_code);
+        return -4;
     }
     if (fabs(data->latitude) > 90.0) {
-        printf("Error: Invalid latitude '%f'\n", data->latitude);
-        return -1;
+        //printf("Error: Invalid latitude '%f'\n", data->latitude);
+        return -5;
     }
     if (fabs(data->longitude) > 180.0) {
-        printf("Error: Invalid longitude '%f'\n", data->longitude);
-        return -1;
+        //printf("Error: Invalid longitude '%f'\n", data->longitude);
+        return -5;
     }
 
     // Convert latitude to DDMM.MM{N|S}
@@ -1140,7 +1140,7 @@ int aprs_encode_position_with_ts(char *info, size_t len, const aprs_position_wit
     // Encode the string
     int ret = snprintf(info, len, "%c%s%s%c%s%c", data->dti, data->timestamp, lat_str, data->symbol_table, lon_str, data->symbol_code);
     if (ret < 0 || (size_t) ret >= len) {
-        printf("Error: Buffer too small (required %d, available %zu)\n", ret, len);
+        //printf("Error: Buffer too small (required %d, available %zu)\n", ret, len);
         return -1;
     }
 
@@ -1148,8 +1148,8 @@ int aprs_encode_position_with_ts(char *info, size_t len, const aprs_position_wit
     if (data->comment) {
         int ret2 = snprintf(info + ret, len - ret, "%s", data->comment);
         if (ret2 < 0 || (size_t) ret2 >= len - ret) {
-            printf("Error: Buffer overflow for comment\n");
-            return -1;
+            //printf("Error: Buffer overflow for comment\n");
+            return -2;
         }
         ret += ret2;
     }
@@ -2076,7 +2076,7 @@ int aprs_encode_df_report(char *info, size_t len, const aprs_df_report_t *data) 
         pos += comment_len;
     }
     info[pos] = '\0';
-    printf("Encoded DF report: '%s' (length: %zu)\n", info, total_len);
+    //printf("Encoded DF report: '%s' (length: %zu)\n", info, total_len);
     return total_len;
 }
 
