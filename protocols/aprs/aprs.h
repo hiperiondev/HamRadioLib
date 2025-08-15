@@ -26,7 +26,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define APRS_COMMENT_LEN 100
+#define APRS_COMMENT_LEN 200
 
 // Data Type Identifiers (DTIs) for APRS packets
 #define APRS_DTI_POSITION_NO_TS_NO_MSG '!'     // Position without timestamp (no messaging)
