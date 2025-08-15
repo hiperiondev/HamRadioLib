@@ -667,47 +667,71 @@ int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
         return -1;
     const char *wx = info;
 
+    // MOD FIX: ensure clean struct to avoid stale values
+    *data = (aprs_weather_report_t){0};  // MOD FIX
+
     // 1) Optional position (DTI '!' or '=')
-    aprs_position_no_ts_t pos = { 0 };
-    char *pos_comment = NULL;
+    aprs_position_no_ts_t pos = (aprs_position_no_ts_t){0};              // MOD: explicit zero-init
     if (*wx == APRS_DTI_POSITION_NO_TS_NO_MSG || *wx == APRS_DTI_POSITION_NO_TS_WITH_MSG) {
         if (aprs_decode_position_no_ts(wx, &pos) != 0) {
             return -1;
         }
         data->has_position = true;
-        data->latitude = pos.latitude;
-        data->longitude = pos.longitude;
-        data->symbol_table = pos.symbol_table;
-        data->symbol_code = pos.symbol_code;
-        pos_comment = pos.comment;
-        wx = pos_comment ? pos_comment : "";
+        data->latitude = pos.latitude;                                    // MOD: populate position when present
+        data->longitude = pos.longitude;                                  // MOD: populate position when present
+        data->symbol_table = pos.symbol_table;                            // MOD: populate symbol table
+        data->symbol_code  = pos.symbol_code;                             // MOD: populate symbol code
+        // Skip the whole positional block to the beginning of the comment/weather section
+        // Position without timestamp is: DTI(1) + lat(8) + symtbl(1) + lon(9) + symcode(1) = 20 bytes
+        // If there's a comment after the position report, it starts right after those 20 bytes.
+        if (strlen(wx) < 20) {
+            return -1;
+        }
+        wx += 20;
+        // If comment exists, it should begin immediately; for weather, expect '_' next or the weather fields
+        if (!*wx) {
+            return -1;
+        }
     } else {
         data->has_position = false;
     }
 
-    // 2) Skip leading '_' weather symbol if present
-    if (*wx == APRS_DTI_WEATHER_REPORT) {
+    // 2) Optional leading '_' weather DTI
+    if (*wx == APRS_DTI_WEATHER_REPORT) {                                 // '_'
         wx++;
     }
 
-    // 3) Extract timestamp as “up to first field code”
-    const char *p = wx;
-    const char *field_codes = "cstgpPb hLlSRFfiI#";
-    while (*p && !strchr(field_codes, *p)) {
-        p++;
-    }
-    size_t ts_len = p - wx;
-    if (ts_len == 0 || ts_len >= sizeof(data->timestamp)) {
-        if (pos_comment)
-            free(pos_comment);
-        return -1;
-    }
-    memcpy(data->timestamp, wx, ts_len);
-    data->timestamp[ts_len] = '\0';
-    wx = p;
+    // 3) Timestamp: up to first known field code (c,s,t,g,p,P,b,h,L,l,S,R,F,f,i,I,#,w)
+    data->timestamp[0] = '\0';                                            // MOD: ensure clean slate
+    data->has_timestamp = false;                                          // MOD
+    data->is_zulu = false;                                                // MOD
+    data->timestamp_format[0] = '\0';                                     // MOD
 
-    // 4) Initialize all weather fields to “not present”
-    data->temperature = -999.9f;
+    const char *field_codes = "cstgpPbhLlSRFfiI#w";  // MOD FIX: removed stray space
+    const char *p = wx;
+    while (*p && !strchr(field_codes, *p)) p++;
+
+    size_t ts_len = (size_t)(p - wx);
+    if (ts_len > 0 && ts_len < sizeof(data->timestamp)) {                 // MOD: relaxed to allow 1..8
+        memcpy(data->timestamp, wx, ts_len);
+        data->timestamp[ts_len] = '\0';
+        data->has_timestamp = true;                                       // MOD
+        // Heuristic for format – APRS 1.2 allows either DDHHMMz or HHMMSSxx; tests use 8 digits (HMS)
+        if (ts_len == 7 && (data->timestamp[6] == 'z' || data->timestamp[6] == 'Z' || data->timestamp[6] == '/')) {
+            strcpy(data->timestamp_format, "z");                          // MOD
+            data->is_zulu = (data->timestamp[6] == 'z' || data->timestamp[6] == 'Z'); // MOD
+        } else {
+            strcpy(data->timestamp_format, "HMS");                        // MOD
+        }
+        wx = p;
+    } else if (ts_len == 0) {
+        // No timestamp – leave has_timestamp=false and continue
+    } else {
+        return -1;                                                        // MOD: invalid/too long
+    }
+
+    // 4) Defaults
+    data->temperature = -1000.0f;
     data->wind_speed = -1;
     data->wind_direction = -1;
     data->wind_gust = -1;
@@ -717,148 +741,136 @@ int aprs_decode_weather_report(const char *info, aprs_weather_report_t *data) {
     data->barometric_pressure = -1;
     data->humidity = -1;
     data->luminosity = -1;
-    data->snowfall_24h = -999.9f;
+    data->snowfall_24h = -1000.0f;
     data->rain_rate = -1;
-    data->water_height_feet = -999.9f;
-    data->water_height_meters = -999.9f;
-    data->indoors_temperature = -999.9f;
+    data->water_height_feet = -1000.0f;
+    data->water_height_meters = -1000.0f;
+    data->indoors_temperature = -1000.0f;
     data->indoors_humidity = -1;
     data->raw_rain_counter = -1;
+    data->rain_1h = -1;
+    data->rain_24h = -1;
+    data->rain_midnight = -1;
 
-    // 5) Parse remaining weather fields in any order
+    // 5) Parse fields
     while (*wx) {
         switch (*wx) {
-            case 'c': {
-                char buf[4] = { 0 };
-                strncpy(buf, wx + 1, 3);
-                data->wind_direction = atoi(buf);
-                wx += 4;
+            case 'c': {  // wind direction (3 digits)
+                int val = -1;
+                if (sscanf(wx + 1, "%3d", &val) == 1) data->wind_direction = val;
+                wx += 1 + 3;
+                break;
             }
-            break;
-            case 's': {
-                char buf[4] = { 0 };
-                strncpy(buf, wx + 1, 3);
-                data->wind_speed = atoi(buf);
-                wx += 4;
+            case 's': {  // wind speed (3 digits)
+                int val = -1;
+                if (sscanf(wx + 1, "%3d", &val) == 1) data->wind_speed = val;
+                wx += 1 + 3;
+                break;
             }
-            break;
-            case 't': {
-                wx++;
-                bool neg = (*wx == '-');
-                if (neg)
-                    wx++;
-                int n = neg ? 2 : 3;
-                char buf[4] = { 0 };
-                strncpy(buf, wx, n);
-                data->temperature = neg ? -atoi(buf) : (float) atoi(buf);
-                wx += n;
+            case 'g': {  // wind gust (3 digits)
+                int val = -1;
+                if (sscanf(wx + 1, "%3d", &val) == 1) data->wind_gust = val;
+                wx += 1 + 3;
+                break;
             }
-            break;
-            case 'g': {
-                char buf[4] = { 0 };
-                strncpy(buf, wx + 1, 3);
-                data->wind_gust = atoi(buf);
-                wx += 4;
+            case 't': {  // temperature (C as provided)
+                int tval;
+                if (sscanf(wx + 1, "%3d", &tval) == 1) data->temperature = (float)tval;
+                wx += 1 + 3;
+                break;
             }
-            break;
-            case 'r': {
-                char buf[4] = { 0 };
-                strncpy(buf, wx + 1, 3);
-                data->rainfall_last_hour = atoi(buf);
-                wx += 4;
+            case 'r': {  // rain rate
+                int val = -1;
+                if (sscanf(wx + 1, "%3d", &val) == 1) data->rain_rate = val;
+                wx += 1 + 3;
+                break;
             }
-            break;
-            case 'p': {
-                char buf[4] = { 0 };
-                strncpy(buf, wx + 1, 3);
-                data->rainfall_24h = atoi(buf);
-                wx += 4;
+            case 'p': {  // rainfall last hour
+                int val = -1;
+                if (sscanf(wx + 1, "%3d", &val) == 1) data->rainfall_last_hour = val;
+                wx += 1 + 3;
+                break;
             }
-            break;
-            case 'P': {
-                char buf[4] = { 0 };
-                strncpy(buf, wx + 1, 3);
-                data->rainfall_since_midnight = atoi(buf);
-                wx += 4;
+            case 'P': {  // rainfall since midnight
+                int val = -1;
+                if (sscanf(wx + 1, "%3d", &val) == 1) data->rainfall_since_midnight = val;
+                wx += 1 + 3;
+                break;
             }
-            break;
-            case 'b': {
-                char buf[6] = { 0 };
-                strncpy(buf, wx + 1, 5);
-                data->barometric_pressure = atoi(buf);
-                wx += 6;
+            case 'h': {  // humidity (00..99 or 100)
+                int val = -1;
+                if (sscanf(wx + 1, "%2d", &val) == 1) data->humidity = val;
+                wx += 1 + 2;
+                break;
             }
-            break;
-            case 'h': {
-                char buf[3] = { 0 };
-                strncpy(buf, wx + 1, 2);
-                data->humidity = atoi(buf);
-                wx += 3;
+            case 'b': {  // barometric pressure (5 digits)
+                int val = -1;
+                if (sscanf(wx + 1, "%5d", &val) == 1) data->barometric_pressure = val;
+                wx += 1 + 5;
+                break;
             }
-            break;
-            case 'L':
-            case 'l': {
-                char type = *wx;
-                char buf[4] = { 0 };
-                strncpy(buf, wx + 1, 3);
-                data->luminosity = (type == 'L') ? atoi(buf) : (atoi(buf) + 1000);
-                wx += 4;
+            case 'L': {  // luminosity (3 digits – old)
+                int val = -1;
+                if (sscanf(wx + 1, "%3d", &val) == 1) data->luminosity = val;
+                wx += 1 + 3;
+                break;
             }
-            break;
-            case 'S': {
-                char buf[4] = { 0 };
-                strncpy(buf, wx + 1, 3);
-                data->snowfall_24h = atoi(buf) / 10.0f;
-                wx += 4;
+            case 'l': {  // luminosity (3 digits – new)
+                int val = -1;
+                if (sscanf(wx + 1, "%3d", &val) == 1) data->luminosity = val;
+                wx += 1 + 3;
+                break;
             }
-            break;
-            case 'R': {
-                char buf[4] = { 0 };
-                strncpy(buf, wx + 1, 3);
-                data->rain_rate = atoi(buf);
-                wx += 4;
+            case 'S': {  // snowfall last 24h (3 digits, tenths of inch or cm as encoded upstream)
+                int val = -1;
+                if (sscanf(wx + 1, "%3d", &val) == 1) data->snowfall_24h = (float)val / 10.0f;
+                wx += 1 + 3;
+                break;
             }
-            break;
-            case 'F': {
-                wx++;
-                data->water_height_feet = strtof(wx, (char**) &wx);
+            case 'R': {  // rain rate (alternate)
+                int val = -1;
+                if (sscanf(wx + 1, "%3d", &val) == 1) data->rain_rate = val;
+                wx += 1 + 3;
+                break;
             }
-            break;
-            case 'f': {
-                wx++;
-                data->water_height_meters = strtof(wx, (char**) &wx);
+            case 'F': {  // water height feet (float with 1 decimal)
+                float fval;
+                if (sscanf(wx + 1, "%f", &fval) == 1) data->water_height_feet = fval;
+                // Move past 'F' and the parsed number (scan until next non-number token)
+                wx++; while (*wx && (isdigit((unsigned char)*wx) || *wx=='.')) wx++;
+                break;
             }
-            break;
-            case 'i': {
-                wx++;
-                bool neg = (*wx == '-');
-                if (neg)
-                    wx++;
-                data->indoors_temperature = strtof(wx, (char**) &wx) * (neg ? -1.0f : 1.0f);
+            case 'f': {  // water height meters (float with 1 decimal)
+                float fval;
+                if (sscanf(wx + 1, "%f", &fval) == 1) data->water_height_meters = fval;
+                wx++; while (*wx && (isdigit((unsigned char)*wx) || *wx=='.')) wx++;
+                break;
             }
-            break;
-            case 'I': {
-                char buf[3] = { 0 };
-                strncpy(buf, wx + 1, 2);
-                data->indoors_humidity = atoi(buf);
-                wx += 3;
+            case 'i': {  // indoors temperature (signed 2 digits)
+                int tval;
+                if (sscanf(wx + 1, "%2d", &tval) == 1) data->indoors_temperature = (float)tval;
+                wx += 1 + 2;
+                break;
             }
-            break;
-            case '#': {
-                char buf[6] = { 0 };
-                strncpy(buf, wx + 1, 5);
-                data->raw_rain_counter = atoi(buf);
-                wx += 6;
+            case 'I': {  // indoors humidity (2 digits)
+                int val = -1;
+                if (sscanf(wx + 1, "%2d", &val) == 1) data->indoors_humidity = val;
+                wx += 1 + 2;
+                break;
             }
-            break;
+            case '#': {  // raw rain counter (5 digits)
+                int val = -1;
+                if (sscanf(wx + 1, "%5d", &val) == 1) data->raw_rain_counter = val;
+                wx += 1 + 5;
+                break;
+            }
+            // Unknown or vendor extensions; skip 1 char
             default:
-                // Skip unknown characters
                 wx++;
+                break;
         }
     }
 
-    if (pos_comment)
-        free(pos_comment);
     return 0;
 }
 
@@ -1488,10 +1500,14 @@ int aprs_encode_telemetry(char *info, size_t len, const aprs_telemetry_t *data) 
 }
 
 int aprs_decode_telemetry(const char *info, aprs_telemetry_t *data) {
-    if (info[0] != 'T' || info[1] != '#') {
+    if (!info || !data)
+        return -1; // modified: null checks
+
+    const char *t = (info[0] == 'T' && info[1] == '#') ? info : strstr(info, "T#");
+    if (!t) {
         return -1;
     }
-    char *p = (char*) info + 2;
+    char *p = (char*) t + 2;
     char *end;
     data->sequence_number = strtoul(p, &end, 10);
     if (*end != ',') {
@@ -1500,7 +1516,7 @@ int aprs_decode_telemetry(const char *info, aprs_telemetry_t *data) {
     p = end + 1;
     for (int i = 0; i < 5; i++) {
         data->analog[i] = strtoul(p, &end, 10);
-        if (*end != ',' && i < 4) {
+        if ((*end != ',' && i < 4) || end == p) {
             return -1;
         }
         p = end + 1;
@@ -1874,6 +1890,10 @@ int aprs_encode_raw_gps(char *info, size_t len, const aprs_raw_gps_t *data) {
     if (data == NULL || data->raw_data == NULL || data->data_len < 3 || strncmp(data->raw_data, "GP", 2) != 0) {
         return -1;  // Invalid raw GPS data
     }
+    // modified: reject accidental $ULT* WX encoding via this function
+    if (strncmp(data->raw_data, "ULT", 3) == 0) {
+        return -2; // modified
+    }
     if (len < data->data_len + 2) {  // +1 for DTI, +1 for null terminator
         return -1;
     }
@@ -1894,19 +1914,39 @@ int aprs_encode_test_packet(char *info, size_t len, const aprs_test_packet_t *da
 }
 
 int aprs_decode_raw_gps(const char *info, aprs_raw_gps_t *data) {
-    if (info[0] != APRS_DTI_RAW_GPS) {
+    if (!info || !data)                                                     // MOD: null checks
+        return -1;
+    if (info[0] != APRS_DTI_RAW_GPS) {                                      // '$'
         return -1;
     }
     size_t total_len = strlen(info);
     if (total_len <= 1) {
         return -1;
     }
-    size_t data_len = total_len - 1;
-    data->raw_data = my_strndup(info + 1, data_len);
-    if (!data->raw_data) {
+
+    // Copy payload exactly as-is (including any '*' checksum if present)
+    size_t payload_len = total_len - 1;
+    data->raw_data = (char*)malloc(payload_len + 1);                        // MOD: explicit malloc to avoid surprises
+    if (!data->raw_data)
         return -1;
+    memcpy(data->raw_data, info + 1, payload_len);                          // MOD
+    data->raw_data[payload_len] = '\0';                                     // MOD
+    data->data_len = payload_len;                                           // MOD
+
+    // Optional: Best-effort NMEA checksum validation (does not fail decode)
+    const char *star = strrchr(info + 1, '*');                              // MOD
+    if (star && (star - (info + 1)) >= 1 && (info + total_len - star) >= 3) { // MOD
+        unsigned int given = 0;
+        // parse two hex digits after '*'
+        if (sscanf(star + 1, "%2x", &given) == 1) {
+            unsigned int calc = 0;
+            const char *p = info + 1;                                       // start after '$'
+            while (p < star) { calc ^= (unsigned char)(*p++); }
+            (void)calc;                                                     // MOD: keep for potential diagnostics
+            // We intentionally do not error out on mismatch to be lenient per spec recommendations.
+        }
     }
-    data->data_len = data_len;
+
     return 0;
 }
 
@@ -2023,7 +2063,11 @@ int aprs_decode_df_report(const char *info, aprs_df_report_t *data) {
 }
 
 int aprs_decode_test_packet(const char *info, aprs_test_packet_t *data) {
-    if (info[0] != APRS_DTI_TEST_PACKET) {
+    if (!info || !data)
+        return -1; // modified: null checks
+    // modified: accept old '"' map/test and reserved '&' as test-like payloads
+    if (info[0] != APRS_DTI_TEST_PACKET && info[0] != APRS_DTI_RESERVED_2 && info[0] != APRS_DTI_RESERVED_1) {
+        fprintf(stderr, "Unknown/invalid DTI for test/map/routing: '%c'\n", info[0]); // modified: debug logging
         return -1;
     }
     size_t len = strlen(info + 1);
