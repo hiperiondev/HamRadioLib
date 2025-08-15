@@ -110,10 +110,10 @@
  * @brief Packet containing a DX spot.
  */
 typedef struct {
-    char de_callsign[10];       /**< Reporting station callsign (up to 9 chars + NUL). */
-    double frequency;           /**< Frequency in MHz of the spotted station. */
-    char spotted_callsign[10];  /**< Spotted callsign (up to 9 chars + NUL). */
-    char comment[256];          /**< Optional DX comment text (NUL-terminated). */
+    char de_callsign[10]; /**< Reporting station callsign (up to 9 chars + NUL). */
+    double frequency; /**< Frequency in MHz of the spotted station. */
+    char spotted_callsign[10]; /**< Spotted callsign (up to 9 chars + NUL). */
+    char comment[256]; /**< Optional DX comment text (NUL-terminated). */
 } aprs_dx_spot_t;
 
 /**
@@ -132,22 +132,22 @@ typedef struct {
  * Use -1 in members that are not present.
  */
 typedef struct {
-    int power;                  /**< Transmitter power (0–9), or -1 if absent. */
-    int height;                 /**< Antenna height (0–9 or A–Z in APRS text), or -1. */
-    int gain;                   /**< Antenna gain (0–9), or -1. */
-    int direction;              /**< Antenna directivity (0–9), or -1. */
+    int power; /**< Transmitter power (0–9), or -1 if absent. */
+    int height; /**< Antenna height (0–9 or A–Z in APRS text), or -1. */
+    int gain; /**< Antenna gain (0–9), or -1. */
+    int direction; /**< Antenna directivity (0–9), or -1. */
 } aprs_phg_t;
 
 /**
  * @brief Minimal position-without-timestamp report used by helpers.
  */
 typedef struct {
-    double latitude;            /**< Latitude in decimal degrees (-90..90). */
-    double longitude;           /**< Longitude in decimal degrees (-180..180). */
-    char symbol;                /**< Symbol code character. */
-    int altitude;               /**< Altitude in feet, or -1 if absent. */
-    aprs_phg_t phg;             /**< Optional PHG (set members to -1 if absent). */
-    char comment[100];          /**< Optional trailing comment (NUL-terminated). */
+    double latitude; /**< Latitude in decimal degrees (-90..90). */
+    double longitude; /**< Longitude in decimal degrees (-180..180). */
+    char symbol; /**< Symbol code character. */
+    int altitude; /**< Altitude in feet, or -1 if absent. */
+    aprs_phg_t phg; /**< Optional PHG (set members to -1 if absent). */
+    char comment[100]; /**< Optional trailing comment (NUL-terminated). */
 } aprs_position_report_t;
 
 /**
@@ -156,28 +156,28 @@ typedef struct {
  * All string fields are NUL-terminated; booleans toggle inclusion of optional values.
  */
 typedef struct {
-    char callsign[10];          /**< Local station callsign (up to 9 chars + NUL). */
-    char software_version[50];  /**< Identifier/version string for ?APRS?. */
-    char status_text[63];       /**< Status used for ?INFO? (up to 62 chars + NUL). */
-    double latitude;            /**< Lat for ?LOC?. */
-    double longitude;           /**< Lon for ?LOC?. */
-    char symbol_table;          /**< Symbol table for position responses. */
-    char symbol_code;           /**< Symbol code for position responses. */
-    bool has_dest;              /**< If true, include destination coordinates. */
-    double dest_lat;            /**< Destination latitude for ?DST?. */
-    double dest_lon;            /**< Destination longitude for ?DST?. */
-    bool has_altitude;          /**< If true, include altitude. */
-    int altitude;               /**< Altitude (feet), valid if has_altitude. */
-    char timestamp[8];          /**< Last beacon timestamp "DDHHMMz" for ?TIME?. */
+    char callsign[10]; /**< Local station callsign (up to 9 chars + NUL). */
+    char software_version[50]; /**< Identifier/version string for ?APRS?. */
+    char status_text[63]; /**< Status used for ?INFO? (up to 62 chars + NUL). */
+    double latitude; /**< Lat for ?LOC?. */
+    double longitude; /**< Lon for ?LOC?. */
+    char symbol_table; /**< Symbol table for position responses. */
+    char symbol_code; /**< Symbol code for position responses. */
+    bool has_dest; /**< If true, include destination coordinates. */
+    double dest_lat; /**< Destination latitude for ?DST?. */
+    double dest_lon; /**< Destination longitude for ?DST?. */
+    bool has_altitude; /**< If true, include altitude. */
+    int altitude; /**< Altitude (feet), valid if has_altitude. */
+    char timestamp[8]; /**< Last beacon timestamp "DDHHMMz" for ?TIME?. */
 } aprs_station_info_t;
 
 /**
  * @brief User-defined format (DTI '{').
  */
 typedef struct {
-    char userID;                /**< One-character user ID (after '{'). */
-    char packetType;            /**< One-character user-defined packet type. */
-    char data[256];             /**< Arbitrary printable ASCII payload (NUL-terminated). */
+    char userID; /**< One-character user ID (after '{'). */
+    char packetType; /**< One-character user-defined packet type. */
+    char data[256]; /**< Arbitrary printable ASCII payload (NUL-terminated). */
 } aprs_user_defined_format_t;
 
 /**
@@ -187,25 +187,25 @@ typedef struct {
  * Some members (e.g., comment) may be dynamically allocated by decoders.
  */
 typedef struct {
-    double latitude;            /**< Latitude in decimal degrees (-90..90). */
-    double longitude;           /**< Longitude in decimal degrees (-180..180). */
-    int speed;                  /**< Speed in knots (0..1943), or -1. */
-    int course;                 /**< Course in degrees (0..360), or -1. */
-    int altitude;               /**< Altitude in feet, or INT_MIN if not available. */
-    char symbol_table;          /**< Symbol table ('/' or '\\'). */
-    char symbol_code;           /**< Symbol code (printable ASCII). */
-    char *comment;              /**< Optional comment (NUL-terminated, malloc'd if decoded). */
-    char dti;                   /**< Data Type Indicator ('!' or '='). */
-    bool has_course_speed;      /**< True if course/speed were present. */
-    bool has_altitude;          /**< True if altitude was present. */
+    double latitude; /**< Latitude in decimal degrees (-90..90). */
+    double longitude; /**< Longitude in decimal degrees (-180..180). */
+    int speed; /**< Speed in knots (0..1943), or -1. */
+    int course; /**< Course in degrees (0..360), or -1. */
+    int altitude; /**< Altitude in feet, or INT_MIN if not available. */
+    char symbol_table; /**< Symbol table ('/' or '\\'). */
+    char symbol_code; /**< Symbol code (printable ASCII). */
+    char *comment; /**< Optional comment (NUL-terminated, malloc'd if decoded). */
+    char dti; /**< Data Type Indicator ('!' or '='). */
+    bool has_course_speed; /**< True if course/speed were present. */
+    bool has_altitude; /**< True if altitude was present. */
 } aprs_compressed_position_t;
 
 /**
  * @brief Generic APRS frame slice exposing only the info field and its length.
  */
 typedef struct {
-    char *info;                 /**< Pointer to information field buffer. */
-    size_t info_len;            /**< Length (bytes) of the information field. */
+    char *info; /**< Pointer to information field buffer. */
+    size_t info_len; /**< Length (bytes) of the information field. */
 } aprs_frame_t;
 
 /**
@@ -214,48 +214,52 @@ typedef struct {
  * Optional course/speed, altitude, PHG and DAO extension are supported.
  */
 typedef struct {
-    double latitude;            /**< Latitude in decimal degrees. */
-    double longitude;           /**< Longitude in decimal degrees. */
-    char symbol_table;          /**< Symbol table ('/' or '\\'). */
-    char symbol_code;           /**< Symbol code. */
-    char *comment;              /**< Optional free-form comment (malloc'd by decoders). */
-    char dti;                   /**< DTI used to encode the position ('!' or '='). */
-    bool has_course_speed;      /**< True if course/speed are set. */
-    int course;                 /**< Course in degrees, valid if has_course_speed. */
-    int speed;                  /**< Speed in knots, valid if has_course_speed. */
-    int ambiguity;              /**< Position ambiguity (0..4). */
-    int altitude;               /**< Altitude in feet, or -1 if absent. */
-    aprs_phg_t phg;             /**< Optional PHG (members -1 if absent). */
-    bool has_dao;               /**< True if DAO extra digits are present. */
-    char dao_datum;             /**< DAO datum ID (uppercase letter), valid if has_dao. */
-    char dao_lat_extra;         /**< Extra digit for latitude precision (0..9 base-91 char). */
-    char dao_lon_extra;         /**< Extra digit for longitude precision (0..9 base-91 char). */
+    double latitude; /**< Latitude in decimal degrees. */
+    double longitude; /**< Longitude in decimal degrees. */
+    char symbol_table; /**< Symbol table ('/' or '\\'). */
+    char symbol_code; /**< Symbol code. */
+    char *comment; /**< Optional free-form comment (malloc'd by decoders). */
+    char dti; /**< DTI used to encode the position ('!' or '='). */
+    bool has_course_speed; /**< True if course/speed are set. */
+    int course; /**< Course in degrees, valid if has_course_speed. */
+    int speed; /**< Speed in knots, valid if has_course_speed. */
+    int ambiguity; /**< Position ambiguity (0..4). */
+    int altitude; /**< Altitude in feet, or -1 if absent. */
+    aprs_phg_t phg; /**< Optional PHG (members -1 if absent). */
+    bool has_dao; /**< True if DAO extra digits are present. */
+    char dao_datum; /**< DAO datum ID (uppercase letter), valid if has_dao. */
+    char dao_lat_extra; /**< Extra digit for latitude precision (0..9 base-91 char). */
+    char dao_lon_extra; /**< Extra digit for longitude precision (0..9 base-91 char). */
+    int lat_ambiguity; /**< per-axis ambiguity for latitude (0–4) */
+    int lon_ambiguity; /**< per-axis ambiguity for longitude (0–4) */
 } aprs_position_no_ts_t;
 
 /**
  * @brief Position report with timestamp (DTIs '/' or '@').
  */
 typedef struct {
-    double latitude;            /**< Latitude in decimal degrees. */
-    double longitude;           /**< Longitude in decimal degrees. */
-    char symbol_table;          /**< Symbol table ('/' or '\\'). */
-    char symbol_code;           /**< Symbol code. */
-    char *comment;              /**< Optional comment (malloc'd by decoders). */
-    char timestamp[8];          /**< "DDHHMMz" (UTC) or "DDHHMMl" (local). */
-    char dti;                   /**< DTI used ('/' or '@'). */
-    bool has_course_speed;      /**< True if course/speed are set. */
-    int course;                 /**< Course in degrees, valid if has_course_speed. */
-    int speed;                  /**< Speed in knots, valid if has_course_speed. */
-    int ambiguity;              /**< Position ambiguity (0..4). */
+    double latitude; /**< Latitude in decimal degrees. */
+    double longitude; /**< Longitude in decimal degrees. */
+    char symbol_table; /**< Symbol table ('/' or '\\'). */
+    char symbol_code; /**< Symbol code. */
+    char *comment; /**< Optional comment (malloc'd by decoders). */
+    char timestamp[8]; /**< "DDHHMMz" (UTC) or "DDHHMMl" (local). */
+    char dti; /**< DTI used ('/' or '@'). */
+    bool has_course_speed; /**< True if course/speed are set. */
+    int course; /**< Course in degrees, valid if has_course_speed. */
+    int speed; /**< Speed in knots, valid if has_course_speed. */
+    int ambiguity; /**< Position ambiguity (0..4). */
+    int lat_ambiguity; /**< per-axis ambiguity for latitude (0–4) */
+    int lon_ambiguity; /**< per-axis ambiguity for longitude (0–4) */
 } aprs_position_with_ts_t;
 
 /**
  * @brief APRS text message (also used for bulletins/announcements).
  */
 typedef struct {
-    char addressee[10];         /**< Addressee callsign (up to 9 chars + NUL). */
-    char *message;              /**< Message text (up to 67 chars, malloc'd by decoder). */
-    char *message_number;       /**< Optional message number (up to 5 chars), malloc'd. */
+    char addressee[10]; /**< Addressee callsign (up to 9 chars + NUL). */
+    char *message; /**< Message text (up to 67 chars, malloc'd by decoder). */
+    char *message_number; /**< Optional message number (up to 5 chars), malloc'd. */
 } aprs_message_t;
 
 /**
@@ -266,66 +270,66 @@ typedef struct {
  * supported via dedicated encode/decode helpers.
  */
 typedef struct {
-    bool has_position;          /**< True if latitude/longitude/symbols are set. */
-    double latitude;            /**< Latitude in decimal degrees. */
-    double longitude;           /**< Longitude in decimal degrees. */
-    char symbol_table;          /**< Symbol table for weather icon. */
-    char symbol_code;           /**< Symbol code for weather icon. */
-    bool has_timestamp;         /**< True if timestamp is set. */
-    char timestamp[9];          /**< "DDHHMMz" or "DDHHMMSS" (NUL-terminated). */
-    char timestamp_format[4];   /**< Small tag string to indicate parsed format. */
-    bool is_zulu;               /**< True if timestamp is UTC ('z'), else local. */
-    float temperature;          /**< Ambient temperature (°C or °F per context). */
-    int wind_speed;             /**< Wind speed (knots). */
-    int wind_direction;         /**< Wind direction (degrees). */
-    int wind_gust;              /**< Wind gust (knots). */
-    int rainfall_last_hour;     /**< Rain last hour (0.01" units or context-specific). */
-    int rainfall_24h;           /**< Rain last 24h. */
+    bool has_position; /**< True if latitude/longitude/symbols are set. */
+    double latitude; /**< Latitude in decimal degrees. */
+    double longitude; /**< Longitude in decimal degrees. */
+    char symbol_table; /**< Symbol table for weather icon. */
+    char symbol_code; /**< Symbol code for weather icon. */
+    bool has_timestamp; /**< True if timestamp is set. */
+    char timestamp[9]; /**< "DDHHMMz" or "DDHHMMSS" (NUL-terminated). */
+    char timestamp_format[4]; /**< Small tag string to indicate parsed format. */
+    bool is_zulu; /**< True if timestamp is UTC ('z'), else local. */
+    float temperature; /**< Ambient temperature (°C or °F per context). */
+    int wind_speed; /**< Wind speed (knots). */
+    int wind_direction; /**< Wind direction (degrees). */
+    int wind_gust; /**< Wind gust (knots). */
+    int rainfall_last_hour; /**< Rain last hour (0.01" units or context-specific). */
+    int rainfall_24h; /**< Rain last 24h. */
     int rainfall_since_midnight;/**< Rain since midnight. */
-    int barometric_pressure;    /**< Barometric pressure (tenths of mbar or vendor units). */
-    int humidity;               /**< Relative humidity (%). */
-    int luminosity;             /**< Luminosity/solar radiation (vendor-specific). */
-    float snowfall_24h;         /**< Snowfall in last 24h. */
-    int rain_rate;              /**< Instantaneous rain rate. */
-    float water_height_feet;    /**< Water height (feet). */
-    float water_height_meters;  /**< Water height (meters). */
-    float indoors_temperature;  /**< Indoor temperature. */
-    int indoors_humidity;       /**< Indoor relative humidity. */
-    int raw_rain_counter;       /**< Raw rain counter (vendor). */
-    int rain_1h;                /**< Rain in last hour (duplicate convenience). */
-    int rain_24h;               /**< Rain in last 24 hours (duplicate convenience). */
-    int rain_midnight;          /**< Rain since midnight (duplicate convenience). */
+    int barometric_pressure; /**< Barometric pressure (tenths of mbar or vendor units). */
+    int humidity; /**< Relative humidity (%). */
+    int luminosity; /**< Luminosity/solar radiation (vendor-specific). */
+    float snowfall_24h; /**< Snowfall in last 24h. */
+    int rain_rate; /**< Instantaneous rain rate. */
+    float water_height_feet; /**< Water height (feet). */
+    float water_height_meters; /**< Water height (meters). */
+    float indoors_temperature; /**< Indoor temperature. */
+    int indoors_humidity; /**< Indoor relative humidity. */
+    int raw_rain_counter; /**< Raw rain counter (vendor). */
+    int rain_1h; /**< Rain in last hour (duplicate convenience). */
+    int rain_24h; /**< Rain in last 24 hours (duplicate convenience). */
+    int rain_midnight; /**< Rain since midnight (duplicate convenience). */
 } aprs_weather_report_t;
 
 /**
  * @brief APRS object report (DTI ';').
  */
 typedef struct {
-    char name[10];              /**< Object name (up to 9 chars + NUL). */
-    char timestamp[8];          /**< "DDHHMMz". */
-    double latitude;            /**< Latitude. */
-    double longitude;           /**< Longitude. */
-    char symbol_table;          /**< Symbol table. */
-    char symbol_code;           /**< Symbol code. */
-    bool killed;                /**< True if killed ('_'), false if live ('*'). */
-    bool has_course_speed;      /**< True if course/speed are present. */
-    int course;                 /**< Course (degrees). */
-    int speed;                  /**< Speed (knots). */
-    aprs_phg_t phg;             /**< Optional PHG. */
-    char *comment;              /**< Optional comment (malloc'd by decoder). */
+    char name[10]; /**< Object name (up to 9 chars + NUL). */
+    char timestamp[8]; /**< "DDHHMMz". */
+    double latitude; /**< Latitude. */
+    double longitude; /**< Longitude. */
+    char symbol_table; /**< Symbol table. */
+    char symbol_code; /**< Symbol code. */
+    bool killed; /**< True if killed ('_'), false if live ('*'). */
+    bool has_course_speed; /**< True if course/speed are present. */
+    int course; /**< Course (degrees). */
+    int speed; /**< Speed (knots). */
+    aprs_phg_t phg; /**< Optional PHG. */
+    char *comment; /**< Optional comment (malloc'd by decoder). */
 } aprs_object_report_t;
 
 /**
  * @brief Mic-E data representation (destination + info portions).
  */
 typedef struct {
-    double latitude;            /**< Latitude. */
-    double longitude;           /**< Longitude. */
-    int speed;                  /**< Speed (knots, 0..799). */
-    int course;                 /**< Course (degrees). */
-    char symbol_table;          /**< Symbol table. */
-    char symbol_code;           /**< Symbol code. */
-    char message_code[10];      /**< Message code / status (NUL-terminated). */
+    double latitude; /**< Latitude. */
+    double longitude; /**< Longitude. */
+    int speed; /**< Speed (knots, 0..799). */
+    int course; /**< Course (degrees). */
+    char symbol_table; /**< Symbol table. */
+    char symbol_code; /**< Symbol code. */
+    char message_code[10]; /**< Message code / status (NUL-terminated). */
 } aprs_mice_t;
 
 /**
@@ -333,24 +337,24 @@ typedef struct {
  */
 typedef struct {
     unsigned int sequence_number; /**< Sequence number (0..999). */
-    double analog[5];           /**< Analog channels (normalized or raw per usage). */
-    uint8_t digital;            /**< 8-bit digital bitmap (bit0 = channel 1). */
+    double analog[5]; /**< Analog channels (normalized or raw per usage). */
+    uint8_t digital; /**< 8-bit digital bitmap (bit0 = channel 1). */
 } aprs_telemetry_t;
 
 /**
  * @brief Status report (DTI '>').
  */
 typedef struct {
-    bool has_timestamp;         /**< True if timestamp is included. */
-    char timestamp[8];          /**< "DDHHMMz" if present. */
-    char status_text[63];       /**< Status text (up to 62 chars + NUL). */
+    bool has_timestamp; /**< True if timestamp is included. */
+    char timestamp[8]; /**< "DDHHMMz" if present. */
+    char status_text[63]; /**< Status text (up to 62 chars + NUL). */
 } aprs_status_t;
 
 /**
  * @brief General query (DTI '?').
  */
 typedef struct {
-    char query_type[11];        /**< Query key (e.g., "APRS"), up to 10 chars + NUL. */
+    char query_type[11]; /**< Query key (e.g., "APRS"), up to 10 chars + NUL. */
 } aprs_general_query_t;
 
 /**
@@ -364,62 +368,62 @@ typedef struct {
  * @brief Bulletin/announcement wrapper using the message format.
  */
 typedef struct {
-    char bulletin_id[5];        /**< Bulletin ID (e.g., "BLN1"). */
-    char *message;              /**< Message text (malloc'd by decoder). */
-    char *message_number;       /**< Optional message number (malloc'd). */
+    char bulletin_id[5]; /**< Bulletin ID (e.g., "BLN1"). */
+    char *message; /**< Message text (malloc'd by decoder). */
+    char *message_number; /**< Optional message number (malloc'd). */
 } aprs_bulletin_t;
 
 /**
  * @brief APRS item report (DTI ')').
  */
 typedef struct {
-    char name[10];              /**< Item name (up to 9 chars + NUL). */
-    bool is_live;               /**< True for live item, false for killed. */
-    double latitude;            /**< Latitude. */
-    double longitude;           /**< Longitude. */
-    char symbol_table;          /**< Symbol table. */
-    char symbol_code;           /**< Symbol code. */
-    bool has_course_speed;      /**< True if course/speed present. */
-    int course;                 /**< Course (degrees). */
-    int speed;                  /**< Speed (knots). */
-    bool has_phg;               /**< True if PHG is present. */
-    aprs_phg_t phg;             /**< Optional PHG. */
-    char *comment;              /**< Optional comment (malloc'd). */
-    bool killed;                /**< False = live ('*'), true = killed ('_'). */
-    char timestamp[8];          /**< "DDHHMMz" or local variant. */
+    char name[10]; /**< Item name (up to 9 chars + NUL). */
+    bool is_live; /**< True for live item, false for killed. */
+    double latitude; /**< Latitude. */
+    double longitude; /**< Longitude. */
+    char symbol_table; /**< Symbol table. */
+    char symbol_code; /**< Symbol code. */
+    bool has_course_speed; /**< True if course/speed present. */
+    int course; /**< Course (degrees). */
+    int speed; /**< Speed (knots). */
+    bool has_phg; /**< True if PHG is present. */
+    aprs_phg_t phg; /**< Optional PHG. */
+    char *comment; /**< Optional comment (malloc'd). */
+    bool killed; /**< False = live ('*'), true = killed ('_'). */
+    char timestamp[8]; /**< "DDHHMMz" or local variant. */
 } aprs_item_report_t;
 
 /**
  * @brief Raw GPS/NMEA payload (DTI '$').
  */
 typedef struct {
-    char *raw_data;             /**< NMEA sentence or raw GPS data (malloc'd). */
-    size_t data_len;            /**< Number of bytes in @ref raw_data. */
+    char *raw_data; /**< NMEA sentence or raw GPS data (malloc'd). */
+    size_t data_len; /**< Number of bytes in @ref raw_data. */
 } aprs_raw_gps_t;
 
 /**
  * @brief Maidenhead grid locator beacon (DTI '[').
  */
 typedef struct {
-    char grid_square[7];        /**< 2–6 character grid (plus NUL). */
-    char *comment;              /**< Optional comment (malloc'd). */
+    char grid_square[7]; /**< 2–6 character grid (plus NUL). */
+    char *comment; /**< Optional comment (malloc'd). */
 } aprs_grid_square_t;
 
 /**
  * @brief Direction Finding (DF) report (DTI '+').
  */
 typedef struct {
-    int bearing;                /**< Bearing in degrees (0..359). */
-    int signal_strength;        /**< Signal strength (implementation-defined scale). */
-    char *comment;              /**< Optional comment (malloc'd). */
+    int bearing; /**< Bearing in degrees (0..359). */
+    int signal_strength; /**< Signal strength (implementation-defined scale). */
+    char *comment; /**< Optional comment (malloc'd). */
 } aprs_df_report_t;
 
 /**
  * @brief Arbitrary test/invalid payload (DTI ',').
  */
 typedef struct {
-    char *data;                 /**< Opaque data (malloc'd). */
-    size_t data_len;            /**< Length in bytes. */
+    char *data; /**< Opaque data (malloc'd). */
+    size_t data_len; /**< Length in bytes. */
 } aprs_test_packet_t;
 
 /* =========================
