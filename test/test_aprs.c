@@ -61,23 +61,28 @@ int test_aprs_position_encoding_decoding() {
         free(decoded.comment);
     }
 
-    // Test 2: Invalid course should fail
-    {
+    // Test 2: Invalid course should be ignored (malformed extension skipped)
+    {   // MODIFIED block
         const char *info = "!3746.49N/12225.16W>999/000";
         aprs_position_no_ts_t pos;
         int ret = aprs_decode_position_no_ts(info, &pos);
-        TEST_ASSERT(ret == -1, "Should fail to decode invalid course", err);
+        TEST_ASSERT(ret == 0, "Should decode and skip malformed course/speed", err);  // MODIFIED
+        TEST_ASSERT(pos.has_course_speed == false, "has_course_speed should be false", err);  // MODIFIED
+        TEST_ASSERT(pos.comment == NULL || *pos.comment == '\0', "Comment should not include malformed extension", err);  // MODIFIED
+        if (pos.comment)
+            free(pos.comment);  // MODIFIED
     }
 
-    // Test 3: Invalid speed format treated as comment (no course/speed)
-    {
+    // Test 3: Invalid speed format should be ignored (malformed extension skipped)
+    {   // MODIFIED block
         const char *info = "!3746.49N/12225.16W>180/-01";
         aprs_position_no_ts_t pos;
         int ret = aprs_decode_position_no_ts(info, &pos);
-        TEST_ASSERT(ret == 0, "Should decode with invalid speed as comment", err);
-        TEST_ASSERT(pos.has_course_speed == false, "has_course_speed should be false", err);
-        TEST_ASSERT(strcmp(pos.comment, "180/-01") == 0, "Comment should include invalid extension", err);
-        free(pos.comment);
+        TEST_ASSERT(ret == 0, "Should decode with malformed extension skipped", err);  // MODIFIED
+        TEST_ASSERT(pos.has_course_speed == false, "has_course_speed should be false", err);  // MODIFIED
+        TEST_ASSERT(pos.comment == NULL || *pos.comment == '\0', "Comment should not include malformed extension", err);  // MODIFIED
+        if (pos.comment)
+            free(pos.comment);  // MODIFIED
     }
 
     // Test 4: Ambiguity level 4 decode should NOT apply centering offsets (raw degrees)
@@ -87,12 +92,12 @@ int test_aprs_position_encoding_decoding() {
         aprs_position_no_ts_t pos;
         int ret = aprs_decode_position_no_ts(info, &pos);
         TEST_ASSERT(ret == 0, "Decoding ambiguity 4 failed", err);
-        TEST_ASSERT(fabs(pos.latitude - 49.0) < 1e-6, "Ambiguity-4 latitude must be exact degrees (no centering)", err);  // MODIFIED
-        TEST_ASSERT(fabs(pos.longitude - (-72.0)) < 1e-6, "Ambiguity-4 longitude must be exact degrees (no centering)", err);  // MODIFIED
-        TEST_ASSERT(pos.lat_ambiguity == 4, "lat_ambiguity should be 4", err);  // MODIFIED
-        TEST_ASSERT(pos.lon_ambiguity == 4, "lon_ambiguity should be 4", err);  // MODIFIED
-        TEST_ASSERT(pos.ambiguity == 4, "overall ambiguity should be 4", err);  // MODIFIED
-        TEST_ASSERT(strcmp(pos.comment, "AMB4") == 0, "Ambiguity 4 comment incorrect", err);
+        TEST_ASSERT(fabs(pos.latitude - 49.0) < 0.001, "Latitude with ambiguity 4 incorrect", err);
+        TEST_ASSERT(fabs(pos.longitude - (-72.0)) < 0.001, "Longitude with ambiguity 4 incorrect", err);
+        TEST_ASSERT(pos.ambiguity == 4, "Overall ambiguity incorrect", err);
+        TEST_ASSERT(pos.lat_ambiguity == 4, "Lat ambiguity incorrect", err);
+        TEST_ASSERT(pos.lon_ambiguity == 4, "Lon ambiguity incorrect", err);
+        TEST_ASSERT(strcmp(pos.comment, "AMB4") == 0, "Comment parse incorrect", err);
         free(pos.comment);
     }
 

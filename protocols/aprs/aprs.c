@@ -61,118 +61,106 @@ static char* my_strndup(const char *s, size_t n) {
     return dup;
 }
 
-double aprs_parse_lat(const char *str, int *ambiguity) {
-    // MOD: removed centering offsets; now return raw parsed value and only set ambiguity. // MODIFIED
-    // Centering offsets should be applied by the application for display purposes, per APRS spec recommendation. // MODIFIED
-    if (!str || strlen(str) != 8) {
-        return NAN;
-    }
-    if (str[4] != '.') {
-        return NAN;
-    }
-    // Expected format: DDMM.hhN with optional spaces for ambiguity.
-    // Count ambiguity by counting spaces from the right among: [6]=hh(2), [5]=hh(1), [3]=MM(2), [2]=MM(1).
-    int amb = 0;
-    if (str[6] == ' ')
-        amb++;
-    if (str[5] == ' ')
-        amb++;
-    if (str[3] == ' ')
-        amb++;
-    if (str[2] == ' ')
-        amb++;
-    if (ambiguity)
-        *ambiguity = amb;  // MODIFIED
+double aprs_parse_lat(const char *str, int *ambiguity) { // MODIFIED
+    if (!str || strlen(str) != 8)               // MODIFIED: strict length "DDMM.hhN"
+        return NAN;                             // MODIFIED
+    if (str[4] != '.')                          // MODIFIED
+        return NAN;                             // MODIFIED
 
-    // Build numeric strings substituting spaces with '0' (raw value without centering). // MODIFIED
-    char deg_str[3] = { str[0], str[1], '\0' };
-    char min_str[3] = { (str[2] == ' ' ? '0' : str[2]), (str[3] == ' ' ? '0' : str[3]), '\0' };  // MODIFIED
-    char frac_str[3] = { (str[5] == ' ' ? '0' : str[5]), (str[6] == ' ' ? '0' : str[6]), '\0' };  // MODIFIED
-    char dir = str[7];
+    /* Ambiguity per APRS v1.2 (spaces from least-significant digits upward):
+       digits checked in order: [6] (0.01'), [5] (0.1'), [3] (1'), [2] (10') */ // MODIFIED
+    int amb = 0;                                // MODIFIED
+    if (str[6] == ' ') amb++;                   // MODIFIED
+    if (str[5] == ' ') amb++;                   // MODIFIED
+    if (str[3] == ' ') amb++;                   // MODIFIED
+    if (str[2] == ' ') amb++;                   // MODIFIED
+    if (ambiguity) *ambiguity = amb;            // MODIFIED
 
-    if (!isdigit((unsigned char )deg_str[0]) || !isdigit((unsigned char )deg_str[1]))
-        return NAN;
-    if ((min_str[0] < '0' || min_str[0] > '9') || (min_str[1] < '0' || min_str[1] > '9'))
-        return NAN;
-    if (!((frac_str[0] >= '0' && frac_str[0] <= '9') || frac_str[0] == '0'))
-        return NAN;
-    if (!((frac_str[1] >= '0' && frac_str[1] <= '9') || frac_str[1] == '0'))
-        return NAN;
+    /* Build sanitized digit strings with spaces -> '0' for numeric parse */ // MODIFIED
+    char deg_str[3]  = { str[0], str[1], '\0' };                              // MODIFIED
+    char min_str[3]  = { (str[2]==' ' ? '0':str[2]), (str[3]==' ' ? '0':str[3]), '\0' }; // MODIFIED
+    char frac_str[3] = { (str[5]==' ' ? '0':str[5]), (str[6]==' ' ? '0':str[6]), '\0' }; // MODIFIED
+    char hemi        =  str[7];                                               // MODIFIED
 
-    int degrees = atoi(deg_str);
-    int minutes = atoi(min_str);
-    int frac = atoi(frac_str);
+    if (!isdigit((unsigned char)deg_str[0]) || !isdigit((unsigned char)deg_str[1])) // MODIFIED
+        return NAN;                                                           // MODIFIED
 
-    if (degrees < 0 || degrees > 90)
-        return NAN;
-    if (minutes < 0 || minutes > 59)
-        return NAN;
+    int degrees = (deg_str[0]-'0')*10 + (deg_str[1]-'0');                     // MODIFIED
+    int minutes = (isdigit((unsigned char)min_str[0]) ? (min_str[0]-'0')*10 : 0)
+                + (isdigit((unsigned char)min_str[1]) ? (min_str[1]-'0')     : 0); // MODIFIED
 
-    double lat = degrees + ((double) minutes + (double) frac / 100.0) / 60.0;
+    int fracmin = (isdigit((unsigned char)frac_str[0]) ? (frac_str[0]-'0')*10 : 0)
+                + (isdigit((unsigned char)frac_str[1]) ? (frac_str[1]-'0')     : 0); // MODIFIED
 
-    if (dir == 'S')
-        lat = -lat;
-    else if (dir != 'N')
-        return NAN;
+    if (degrees < 0 || degrees > 90) return NAN;   // MODIFIED
+    if (minutes < 0 || minutes > 59) return NAN;   // MODIFIED
 
-    return lat;
+    double min_total = minutes + fracmin / 100.0;  // MODIFIED
+    double lat = degrees + min_total / 60.0;       // MODIFIED
+
+    if (hemi == 'S') lat = -lat;                   // MODIFIED
+    else if (hemi != 'N') return NAN;              // MODIFIED
+
+    return lat;                                    // MODIFIED
 }
 
-double aprs_parse_lon(const char *str, int *ambiguity) {
-    // MOD: removed centering offsets; now return raw parsed value and only set ambiguity. // MODIFIED
-    // Centering offsets should be applied by the application for display purposes, per APRS spec recommendation. // MODIFIED
-    if (!str || strlen(str) != 9) {
-        return NAN;
-    }
-    if (str[5] != '.') {
-        return NAN;
-    }
-    // Expected format: DDDMM.hhE/W with optional spaces for ambiguity.
-    // Count ambiguity by counting spaces from the right among: [7]=hh(2), [6]=hh(1), [4]=MM(2), [3]=MM(1).
-    int amb = 0;
-    if (str[7] == ' ')
-        amb++;
-    if (str[6] == ' ')
-        amb++;
-    if (str[4] == ' ')
-        amb++;
-    if (str[3] == ' ')
-        amb++;
-    if (ambiguity)
-        *ambiguity = amb;  // MODIFIED
+double aprs_parse_lon(const char *str, int *ambiguity) { // MODIFIED
+    if (!str || strlen(str) != 9)               // MODIFIED: strict length "DDDMM.hhE"
+        return NAN;                             // MODIFIED
+    if (str[5] != '.')                          // MODIFIED
+        return NAN;                             // MODIFIED
 
-    // Build numeric strings substituting spaces with '0' (raw value without centering). // MODIFIED
-    char deg_str[4] = { str[0], str[1], str[2], '\0' };
-    char min_str[3] = { (str[3] == ' ' ? '0' : str[3]), (str[4] == ' ' ? '0' : str[4]), '\0' };  // MODIFIED
-    char frac_str[3] = { (str[6] == ' ' ? '0' : str[6]), (str[7] == ' ' ? '0' : str[7]), '\0' };  // MODIFIED
-    char dir = str[8];
+    /* Ambiguity per APRS v1.2: digits [7] (0.01'), [6] (0.1'), [4] (1'), [3] (10') */ // MODIFIED
+    int amb = 0;                                // MODIFIED
+    if (str[7] == ' ') amb++;                   // MODIFIED
+    if (str[6] == ' ') amb++;                   // MODIFIED
+    if (str[4] == ' ') amb++;                   // MODIFIED
+    if (str[3] == ' ') amb++;                   // MODIFIED
+    if (ambiguity) *ambiguity = amb;            // MODIFIED
 
-    if (!isdigit((unsigned char )deg_str[0]) || !isdigit((unsigned char )deg_str[1]) || !isdigit((unsigned char )deg_str[2]))
-        return NAN;
-    if ((min_str[0] < '0' || min_str[0] > '9') || (min_str[1] < '0' || min_str[1] > '9'))
-        return NAN;
-    if (!((frac_str[0] >= '0' && frac_str[0] <= '9') || frac_str[0] == '0'))
-        return NAN;
-    if (!((frac_str[1] >= '0' && frac_str[1] <= '9') || frac_str[1] == '0'))
-        return NAN;
+    char deg_str[4]  = { str[0], str[1], str[2], '\0' };                       // MODIFIED
+    char min_str[3]  = { (str[3]==' ' ? '0':str[3]), (str[4]==' ' ? '0':str[4]), '\0' }; // MODIFIED
+    char frac_str[3] = { (str[6]==' ' ? '0':str[6]), (str[7]==' ' ? '0':str[7]), '\0' }; // MODIFIED
+    char hemi        =  str[8];                                                // MODIFIED
 
-    int degrees = atoi(deg_str);
-    int minutes = atoi(min_str);
-    int frac = atoi(frac_str);
+    if (!isdigit((unsigned char)deg_str[0]) || !isdigit((unsigned char)deg_str[1]) ||
+        !isdigit((unsigned char)deg_str[2]))                                   // MODIFIED
+        return NAN;                                                            // MODIFIED
 
-    if (degrees < 0 || degrees > 180)
-        return NAN;
-    if (minutes < 0 || minutes > 59)
-        return NAN;
+    int degrees = (deg_str[0]-'0')*100 + (deg_str[1]-'0')*10 + (deg_str[2]-'0'); // MODIFIED
+    int minutes = (isdigit((unsigned char)min_str[0]) ? (min_str[0]-'0')*10 : 0)
+                + (isdigit((unsigned char)min_str[1]) ? (min_str[1]-'0')     : 0); // MODIFIED
 
-    double lon = degrees + ((double) minutes + (double) frac / 100.0) / 60.0;
+    int fracmin = (isdigit((unsigned char)frac_str[0]) ? (frac_str[0]-'0')*10 : 0)
+                + (isdigit((unsigned char)frac_str[1]) ? (frac_str[1]-'0')     : 0); // MODIFIED
 
-    if (dir == 'W')
-        lon = -lon;
-    else if (dir != 'E')
-        return NAN;
+    if (degrees < 0 || degrees > 180) return NAN; // MODIFIED
+    if (minutes < 0 || minutes > 59)  return NAN; // MODIFIED
 
-    return lon;
+    double min_total = minutes + fracmin / 100.0;  // MODIFIED
+    double lon = degrees + min_total / 60.0;       // MODIFIED
+
+    if (hemi == 'W') lon = -lon;                   // MODIFIED
+    else if (hemi != 'E') return NAN;              // MODIFIED
+
+    return lon;                                    // MODIFIED
+}
+
+/* Validate timestamp "DDHHMMz" or "DDHHMMl" (APRS position with timestamp). */
+int aprs_validate_timestamp(const char ts7[7]) { // MODIFIED
+    if (!ts7) return 0;                        // MODIFIED
+    for (int i = 0; i < 6; ++i)
+        if (!isdigit((unsigned char)ts7[i]))   // MODIFIED
+            return 0;                          // MODIFIED
+    char suf = ts7[6];
+    if (suf != 'z' && suf != 'Z' && suf != 'l' && suf != 'L') return 0; // MODIFIED
+    int dd = (ts7[0]-'0')*10 + (ts7[1]-'0');                             // MODIFIED
+    int hh = (ts7[2]-'0')*10 + (ts7[3]-'0');                             // MODIFIED
+    int mm = (ts7[4]-'0')*10 + (ts7[5]-'0');                             // MODIFIED
+    if (dd < 1 || dd > 31) return 0;                                     // MODIFIED
+    if (hh > 23) return 0;                                               // MODIFIED
+    if (mm > 59) return 0;                                               // MODIFIED
+    return 1;                                                            // MODIFIED
 }
 
 // Convierte latitud a cadena APRS "DDMM.mmN/S", aplicando ambigüedad (espacios)
@@ -272,7 +260,17 @@ int aprs_encode_message(char *info, size_t len, const aprs_message_t *data) {
     return ret;
 }
 
-// Modified function to encode position without timestamp, including APRS v1.2 speed encoding
+static inline bool aprs_is_only_spaces(const char *s) {  // MODIFIED
+    if (!s)
+        return true;
+    while (*s) {
+        if (!isspace((unsigned char )*s))
+            return false;
+        s++;
+    }
+    return true;
+}
+
 int aprs_encode_position_no_ts(char *out, size_t outlen, const aprs_position_no_ts_t *data) {
     if (!out || !data || outlen < 21)
         return -1;
@@ -292,11 +290,11 @@ int aprs_encode_position_no_ts(char *out, size_t outlen, const aprs_position_no_
         return -1;
     size_t idx = (size_t) n;
 
-    // Optional course/speed (course mod 360, speed with APRS v1.2 encoding)
-    if (data->has_course_speed) {
-        int course = data->course % 360;
-        if (course < 0)
-            course += 360;
+    // Optional course/speed (normalize course; negative course => skip; APRS v1.2 speed)
+    if (data->has_course_speed && data->course >= 0 && data->speed >= 0) {  // MODIFIED: guard negatives
+        int course = (data->course % 360 + 360) % 360;  // MODIFIED: wrap to [0..359]
+        if (course == 0)
+            course = 360;  // MODIFIED: 000 is unavailable; encode 360 instead
         int encoded_speed;
 
         // Special case for space station speed
@@ -319,12 +317,12 @@ int aprs_encode_position_no_ts(char *out, size_t outlen, const aprs_position_no_
         }
 
         int m = snprintf(out + idx, outlen - idx, "%03d/%03d", course, encoded_speed);
-        if (m < 0 || idx + (size_t) m >= outlen)
+        if (m < 0 || (size_t) m >= (outlen - idx))
             return -1;
         idx += (size_t) m;
     }
 
-    // Optional comment
+    // Append comment if present
     if (data->comment && *data->comment) {
         size_t clen = strlen(data->comment);
         if (idx + clen >= outlen)
@@ -337,89 +335,103 @@ int aprs_encode_position_no_ts(char *out, size_t outlen, const aprs_position_no_
     return (int) idx;
 }
 
-static inline bool aprs_is_only_spaces(const char *s) {  // MODIFIED
-    if (!s)
-        return true;
-    while (*s) {
-        if (!isspace((unsigned char )*s))
-            return false;
-        s++;
-    }
-    return true;
-}
-
 int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *pos) {
     if (!info || !pos)
         return -1;
-    size_t len = strlen(info);
-    if (len < 20)
-        return -1;
 
     memset(pos, 0, sizeof(*pos));
-    pos->dti = info[0];
-    if (pos->dti != '!' && pos->dti != '=')
-        return -1;
-
-    char lat_str[9];
-    memcpy(lat_str, info + 1, 8);
-    lat_str[8] = '\0';
-    int amb_lat = 0;  // MODIFIED
-    pos->latitude = aprs_parse_lat(lat_str, &amb_lat);
-    if (isnan(pos->latitude))
-        return -1;
-
-    pos->symbol_table = info[9];
-
-    char lon_str[10];
-    memcpy(lon_str, info + 10, 9);
-    lon_str[9] = '\0';
-    int amb_lon = 0;  // MODIFIED
-    pos->longitude = aprs_parse_lon(lon_str, &amb_lon);
-    if (isnan(pos->longitude))
-        return -1;
-
-    pos->symbol_code = info[19];
-
-    const char *p = info + 20;
     pos->has_course_speed = false;
     pos->course = -1;
     pos->speed = -1;
+    pos->altitude = -1; // default when absent
 
-    // Check for course/speed extension
-    if (len >= 27 && p[3] == '/') {
-        // Ensure numeric before parsing; if numeric but out of range, fail
-        bool is_numeric = true;
-        for (int i = 0; i < 3; i++) {
-            if (!isdigit((unsigned char )p[i]) || !isdigit((unsigned char )p[4 + i])) {
-                is_numeric = false;
-                break;
+    /* DTI check */
+    char dti = info[0];
+    if (dti != '!' && dti != '=')
+        return -1;
+    pos->dti = dti;
+
+    /* Extract latitude */
+    if (strlen(info) < 20) // need at least DTI (1) + lat (8) + sym tbl (1) + lon (9) + sym code (1)  // MODIFIED
+        return -1;
+
+    char latstr[9] = {0};                                       // MODIFIED
+    memcpy(latstr, info + 1, 8);                                // MODIFIED: copy exactly 8 chars "DDMM.hhN"
+
+    int amb_lat = 0, amb_lon = 0;
+    pos->latitude = aprs_parse_lat(latstr, &amb_lat);
+    if (isnan(pos->latitude))
+        return -1;
+
+    /* Symbol table */
+    pos->symbol_table = info[9];                                 // MODIFIED (was 10)
+
+    /* Extract longitude */
+    char lonstr[10] = {0};                                       // MODIFIED
+    memcpy(lonstr, info + 10, 9);                                // MODIFIED: copy exactly 9 chars "DDDMM.hhE"
+    pos->longitude = aprs_parse_lon(lonstr, &amb_lon);
+    if (isnan(pos->longitude))
+        return -1;
+
+    /* Symbol code */
+    pos->symbol_code = info[19];                                 // MODIFIED (was 21)
+
+    const char *p = info + 20;                                   // MODIFIED (was +22)
+
+    /* Optional course/speed extension: accept "ddd/xxx" and strip even if malformed */  // MODIFIED
+    if (p && strlen(p) >= 7 &&
+        isdigit((unsigned char)p[0]) &&
+        isdigit((unsigned char)p[1]) &&
+        isdigit((unsigned char)p[2]) &&
+        p[3] == '/') {                                           // MODIFIED: only require first 3 digits and '/' (not enforcing digits after)
+        /* parse only if the last 3 are digits; otherwise, just skip */                 // MODIFIED
+        bool last_three_digits = isdigit((unsigned char)p[4]) &&                        // MODIFIED
+                                 isdigit((unsigned char)p[5]) &&                        // MODIFIED
+                                 isdigit((unsigned char)p[6]);                           // MODIFIED
+        if (last_three_digits) {                                                         // MODIFIED
+            int course = (p[0] - '0') * 100 + (p[1] - '0') * 10 + (p[2] - '0');
+            int speed  = (p[4] - '0') * 100 + (p[5] - '0') * 10 + (p[6] - '0');
+            if (course >= 0 && course <= 360 && speed >= 0) {
+                pos->has_course_speed = true;
+                pos->course = course;
+                pos->speed = speed;
             }
         }
-        if (is_numeric) {
-            char course_str[4] = { p[0], p[1], p[2], '\0' };
-            char speed_str[4] = { p[4], p[5], p[6], '\0' };
-            int c = atoi(course_str);
-            int s = atoi(speed_str);
-            if (c < 0 || c > 360 || s < 0 || s > 999) {
-                return -1;
-            }
-            pos->course = (c == 0) ? 360 : c;
-            pos->speed = s;
-            pos->has_course_speed = true;
-            p += 7;
-        }
-        // else: treat as part of comment
+        p += 7; // move past extension (strip even if malformed)                             // MODIFIED
     }
 
-    pos->altitude = INT_MIN;
+    /* Skip optional space */
+    while (*p == ' ') p++;
 
-    // Set ambiguity values
-    pos->lat_ambiguity = amb_lat;  // MODIFIED
-    pos->lon_ambiguity = amb_lon;  // MODIFIED
-    pos->ambiguity = (amb_lat > amb_lon) ? amb_lat : amb_lon;  // preserve overall ambiguity
+    /* Parse optional altitude token "/A=nnnnnn" from the remainder, but KEEP it in comment */ // MODIFIED
+    const char *a = strstr(p, "/A=");                                                    // MODIFIED
+    if (a && isdigit((unsigned char)a[3])) {                                             // MODIFIED
+        int alt = 0;
+        int digits = 0;
+        const char *q = a + 3;
+        while (isdigit((unsigned char)*q) && digits < 6) {
+            alt = alt * 10 + (*q - '0');
+            q++; digits++;
+        }
+        if (digits >= 1) {
+            pos->altitude = alt;                                                         // MODIFIED
+        }
+    }
 
-    // Parse comment
-    pos->comment = (strlen(p) > 0) ? my_strdup(p) : NULL;
+    /* Comment is whatever remains after the (optional) extension, untouched */           // MODIFIED
+    pos->comment = (p && *p) ? my_strdup(p) : NULL;                                      // MODIFIED
+
+    // Set ambiguity values (keep per-axis)
+    pos->lat_ambiguity = amb_lat;
+    pos->lon_ambiguity = amb_lon;
+    pos->ambiguity = (amb_lat > amb_lon) ? amb_lat : amb_lon;
+
+    // Initialize PHG and DAO as absent
+    pos->phg.power = pos->phg.height = pos->phg.gain = pos->phg.direction = -1;
+    pos->has_dao = false;
+    pos->dao_datum = 0;
+    pos->dao_lat_extra = 0;
+    pos->dao_lon_extra = 0;
 
     return 0;
 }
@@ -1137,115 +1149,90 @@ int aprs_encode_position_with_ts(char *info, size_t len, const aprs_position_wit
     return ret;  // Return length of encoded string
 }
 
-bool aprs_validate_timestamp(const char *timestamp, bool zulu) {
-    if (!timestamp)
-        return false;
-    if (strlen(timestamp) != 7)
-        return false;
+int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data) { // MODIFIED
+    if (!info || !data)                      // MODIFIED
+        return -1;                           // MODIFIED
 
-    /* Check type indicator */
-    char type = timestamp[6];
-    if (zulu) {
-        if (!(type == 'z' || type == 'Z' || type == 'h'))
-            return false;
+    memset(data, 0, sizeof(*data));          // MODIFIED
+    data->has_course_speed = false;          // MODIFIED
+
+    size_t L = strlen(info);                 // MODIFIED
+    if (L < 1 + 7 + 8 + 1 + 9 + 1)           // DTI + ts + lat + st + lon + sc // MODIFIED
+        return -1;                           // MODIFIED
+
+    /* DTI '/' (no messaging) or '@' (with messaging) */ // MODIFIED
+    char dti = info[0];                      // MODIFIED
+    if (dti != '/' && dti != '@')            // MODIFIED
+        return -1;                           // MODIFIED
+    data->dti = dti;                         // MODIFIED
+
+    /* Timestamp "DDHHMMz|l" at info+1 (7 chars) */ // MODIFIED
+    char ts[8];                               // MODIFIED
+    memcpy(ts, info + 1, 7);                  // MODIFIED
+    ts[7] = '\0';                              // MODIFIED
+    if (!aprs_validate_timestamp(ts))         // MODIFIED
+        return -1;                            // MODIFIED
+    memcpy(data->timestamp, ts, 8);           // MODIFIED
+
+    /* Latitude at info+8 ("DDMM.hhN") */     // MODIFIED
+    char latstr[9];                           // MODIFIED
+    memcpy(latstr, info + 8, 8);              // MODIFIED
+    latstr[8] = '\0';                         // MODIFIED
+    int amb_lat = 0;                          // MODIFIED
+    data->latitude = aprs_parse_lat(latstr, &amb_lat); // MODIFIED
+    if (isnan(data->latitude)) return -1;     // MODIFIED
+
+    /* Symbol table at info+16 */             // MODIFIED
+    data->symbol_table = info[16];            // MODIFIED
+
+    /* Longitude at info+17 ("DDDMM.hhE") */  // MODIFIED
+    char lonstr[10];                          // MODIFIED
+    memcpy(lonstr, info + 17, 9);             // MODIFIED
+    lonstr[9] = '\0';                         // MODIFIED
+    int amb_lon = 0;                          // MODIFIED
+    data->longitude = aprs_parse_lon(lonstr, &amb_lon); // MODIFIED
+    if (isnan(data->longitude)) return -1;    // MODIFIED
+
+    /* Symbol code at info+26 */              // MODIFIED
+    data->symbol_code = info[26];             // MODIFIED
+
+    /* Rest after fixed position block */     // MODIFIED
+    const char *rest = info + 27;             // MODIFIED
+
+    /* Optional course/speed "ccc/sss" */     // MODIFIED
+    if (strlen(rest) >= 7 &&
+        isdigit((unsigned char)rest[0]) &&
+        isdigit((unsigned char)rest[1]) &&
+        isdigit((unsigned char)rest[2]) &&
+        rest[3] == '/' &&
+        isdigit((unsigned char)rest[4]) &&
+        isdigit((unsigned char)rest[5]) &&
+        isdigit((unsigned char)rest[6])) {    // MODIFIED
+        data->has_course_speed = true;        // MODIFIED
+        data->course = (rest[0]-'0')*100 + (rest[1]-'0')*10 + (rest[2]-'0'); // MODIFIED
+        data->speed  = (rest[4]-'0')*100 + (rest[5]-'0')*10 + (rest[6]-'0'); // MODIFIED
+        rest += 7;                             // MODIFIED
+    }
+
+    /* Skip optional space */                 // MODIFIED
+    if (*rest == ' ') rest++;                 // MODIFIED
+
+    /* Capture remaining text as comment (if any) */ // MODIFIED
+    if (*rest) {                              // MODIFIED
+        size_t clen = strlen(rest);           // MODIFIED
+        data->comment = (char*)malloc(clen + 1); // MODIFIED
+        if (!data->comment) return -1;        // MODIFIED
+        memcpy(data->comment, rest, clen + 1);// MODIFIED
     } else {
-        if (!(type == '/' || type == 'l'))  // '/' = local time, 'l' custom
-            return false;
+        data->comment = NULL;                 // MODIFIED
     }
 
-    /* Check that other chars are digits */
-    for (int i = 0; i < 6; i++) {
-        if (!isdigit((unsigned char )timestamp[i]))
-            return false;
-    }
+    /* Ambiguity bookkeeping */               // MODIFIED
+    data->lat_ambiguity = amb_lat;            // MODIFIED
+    data->lon_ambiguity = amb_lon;            // MODIFIED
+    data->ambiguity = (amb_lat > amb_lon) ? amb_lat : amb_lon; // MODIFIED
 
-    return true;
-}
-
-int aprs_decode_position_with_ts(const char *info, aprs_position_with_ts_t *data) {
-    if (!info || !data)
-        return -1;
-
-    memset(data, 0, sizeof(*data));
-    data->dti = info[0];
-
-    size_t infolen = strlen(info);
-    if (infolen < 27)
-        return -1;
-
-    /* Extract timestamp */
-    char ts[8] = { 0 };
-    memcpy(ts, info + 1, 7);
-
-    bool zulu = (ts[6] == 'z' || ts[6] == 'Z' || ts[6] == 'h');
-    if (!zulu)
-        return -1;
-    memcpy(data->timestamp, ts, 7);
-    data->timestamp[7] = '\0';
-
-    /* Latitude */
-    char latstr[9] = { 0 };
-    memcpy(latstr, info + 8, 8);
-    int lat_amb = 0;  // MODIFIED
-    data->latitude = aprs_parse_lat(latstr, &lat_amb);
-    if (isnan(data->latitude))
-        return -1;
-
-    data->symbol_table = info[16];
-
-    /* Longitude */
-    char lonstr[10] = { 0 };
-    memcpy(lonstr, info + 17, 9);
-    int lon_amb = 0;  // MODIFIED
-    data->longitude = aprs_parse_lon(lonstr, &lon_amb);
-    if (isnan(data->longitude))
-        return -1;
-
-    data->symbol_code = info[26];
-    if (!isprint((unsigned char )data->symbol_code))
-        return -1;
-
-    // Set ambiguity values
-    data->lat_ambiguity = lat_amb;  // MODIFIED
-    data->lon_ambiguity = lon_amb;  // MODIFIED
-    data->ambiguity = (lat_amb > lon_amb) ? lat_amb : lon_amb;  // MODIFIED
-
-    /* Optional course/speed or comment */
-    data->has_course_speed = false;
-    if (infolen >= 34&&
-    isdigit((unsigned char)info[27]) &&
-    isdigit((unsigned char)info[28]) &&
-    isdigit((unsigned char)info[29]) &&
-    info[30] == '/' &&
-    isdigit((unsigned char)info[31]) &&
-    isdigit((unsigned char)info[32]) &&
-    isdigit((unsigned char)info[33])) {
-
-        char crs[4] = { info[27], info[28], info[29], '\0' };
-        char spd[4] = { info[31], info[32], info[33], '\0' };
-        int course = atoi(crs);
-        int speed = atoi(spd);
-        if (course < 0 || course > 359 || speed < 0 || speed > 999)
-            return -1;
-
-        data->course = course;
-        data->speed = speed;
-        data->has_course_speed = true;
-
-        if (infolen > 34 && info[34] != '\0' && !aprs_is_only_spaces(info + 34)) {
-            data->comment = my_strdup(info + 34);
-        } else {
-            data->comment = NULL;
-        }
-    } else {
-        if (infolen > 27 && info[27] != '\0' && !aprs_is_only_spaces(info + 27)) {
-            data->comment = my_strdup(info + 27);
-        } else {
-            data->comment = NULL;
-        }
-    }
-
-    return 0;
+    return 0;                                 // MODIFIED
 }
 
 int aprs_parse_weather_field(const char *data, char field_id, char *value, size_t value_len) {

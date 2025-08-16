@@ -649,11 +649,11 @@ int aprs_decode_object_report(const char *info, aprs_object_report_t *data);
 /**
  * @brief Validate a timestamp string in APRS format.
  * @param timestamp String to validate ("DDHHMMz" or local variant).
- * @param zulu      true to require 'z' (UTC); false to allow local.
  * @retval true  Valid.
  * @retval false Invalid.
  */
-bool aprs_validate_timestamp(const char *timestamp, bool zulu);
+
+int aprs_validate_timestamp(const char ts7[7]);
 
 /**
  * @brief Extract a weather subfield by field ID (e.g., 't' for temperature).
