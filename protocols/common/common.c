@@ -33,6 +33,9 @@
  * @return Pointer to duplicated string or NULL on failure
  */
 char* my_strdup(const char *s) {
+    if (!s) {
+        return NULL;
+    }
     size_t len = strlen(s) + 1;
     char *dup = malloc(len);
     if (dup) {
@@ -40,7 +43,6 @@ char* my_strdup(const char *s) {
     }
     return dup;
 }
-
 
 void trim_trailing_spaces(char *str) {
     size_t len = strlen(str);
@@ -79,6 +81,9 @@ uint16_t CRC(unsigned char *frame, int len) {
 
 // Custom strnlen replacement for portability
 size_t my_strnlen(const char *s, size_t maxlen) {
+    if (!s) {
+        return 0;
+    }
     size_t len = 0;
     while (len < maxlen && s[len] != '\0') {
         len++;
