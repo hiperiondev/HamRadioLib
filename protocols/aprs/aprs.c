@@ -445,11 +445,15 @@ int aprs_encode_position_no_ts(char *out, size_t outlen, const aprs_position_no_
     // Optional uncompressed Course/Speed " /ccc/sss "
     if (data->has_course_speed && data->course >= 0 && data->speed >= 0) {  // MODIFIED: uncompressed ccc/sss uses raw values
         int course = data->course;                                         // MODIFIED: keep 0..360 as-is
-        if (course < 0) course = 0;                                        // MODIFIED
-        if (course > 360) course = 360;                                    // MODIFIED
+        if (course < 0)
+            course = 0;                                        // MODIFIED
+        if (course > 360)
+            course = 360;                                    // MODIFIED
         int speed = data->speed;                                           // MODIFIED: 0..999 knots as-is
-        if (speed < 0) speed = 0;                                          // MODIFIED
-        if (speed > 999) speed = 999;                                      // MODIFIED: clamp only; no scaling or Space Station code
+        if (speed < 0)
+            speed = 0;                                          // MODIFIED
+        if (speed > 999)
+            speed = 999;                                      // MODIFIED: clamp only; no scaling or Space Station code
         int m = snprintf(out + idx, outlen - idx, "%03d/%03d", course, speed);  // MODIFIED
         if (m < 0 || (size_t) m >= (outlen - idx))                          // MODIFIED
             return -1;                                                      // MODIFIED
@@ -1711,9 +1715,8 @@ int aprs_decode_status(const char *info, aprs_status_t *data) {
     if (len < 1)
         return -1;
     size_t pos = 1;
-    // Accept 'z' or 'l' as timestamp marker
-    if (len >= 8 && isdigit(info[1]) && isdigit(info[2]) && isdigit(info[3]) && isdigit(info[4]) && isdigit(info[5]) && isdigit(info[6])
-            && (info[7] == 'z' || info[7] == 'l')) {
+    // Accept only Zulu timestamp marker for status
+    if (len >= 8 && isdigit(info[1]) && isdigit(info[2]) && isdigit(info[3]) && isdigit(info[4]) && isdigit(info[5]) && isdigit(info[6]) && (info[7] == 'z')) {  // MODIFIED: only 'z' allowed for status timestamps
         data->has_timestamp = true;
         memcpy(data->timestamp, info + 1, 7);
         data->timestamp[7] = '\0';
