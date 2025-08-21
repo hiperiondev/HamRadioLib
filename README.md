@@ -3,7 +3,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/hiperiondev/HamRadioLib">
-    <img src="images/logo.jpg" alt="Logo" width="80" height="80">
+    <img src="images/logo.jpg" alt="Logo" height="160">
   </a>
 
 <h3 align="center">HamRadioLib</h3>
