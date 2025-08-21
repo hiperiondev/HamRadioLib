@@ -2263,32 +2263,6 @@ int aprs_decode_grid_square(const char *info, aprs_grid_square_t *data) {
     return 0;
 }
 
-int aprs_encode_df_report(char *buffer, int buf_size, aprs_df_report_t *report) {
-    if (buf_size < 100) {
-        return -1;  // Buffer size insufficient
-    }
-
-    // Format the DF Report as a string (in this case, simple timestamp and comment)
-    int len = snprintf(buffer, buf_size, "DF Report: %s, Timestamp: %u", report->df_comment, report->timestamp);
-
-    if (len >= buf_size) {
-        return -1;  // Overflow error
-    }
-
-    return len;
-}
-
-// Decode the DF Report (Direction Finding)
-int aprs_decode_df_report(const char *buffer, aprs_df_report_t *report) {
-    // Example of parsing the buffer into the DF Report structure
-    // Assuming the format "DF Report: <comment>, Timestamp: <timestamp>"
-    if (sscanf(buffer, "DF Report: %99[^\n], Timestamp: %u", report->df_comment, &report->timestamp) != 2) {
-        return -1;  // Parsing error
-    }
-
-    return 0;  // Success
-}
-
 int aprs_decode_test_packet(const char *info, aprs_test_packet_t *data) {
     if (!info || !data)
         return -1;  // modified: null checks
@@ -3091,14 +3065,19 @@ int aprs_decode_third_party(const char *info, aprs_third_party_packet_t *out) {
     return 0;
 }
 
-int aprs_encode_agrelo_df(char *info, size_t len, const aprs_agrelo_df_t *data) {   // MODIFIED: renamed from aprs_encode_dx_spot
+/* ------------------------------------------------------------------ */
+/* Agrelo DF (DTI '%'): %BBB/Q                                        */
+/* ------------------------------------------------------------------ */
+int aprs_encode_agrelo_df(char *info, size_t len, const aprs_agrelo_df_t *data) {   // MODIFIED: Implemented exact Agrelo DF per Appendix 1
     if (!info || !data)
         return -1;
     if (data->bearing < 0 || data->bearing > 359)
-        return -1;   // MODIFIED: stricter range check
+        return -1;                       // MODIFIED: Range check per spec
     if (data->quality < 0 || data->quality > 9)
-        return -1;     // MODIFIED: stricter range check
-    return snprintf(info, len, "%%%03d/%d", data->bearing, data->quality);
+        return -1;                         // MODIFIED: Range check per spec
+
+    /* Format is exactly: '%' + 3-digit bearing + '/' + 1-digit quality */
+    return snprintf(info, len, "%%%03d/%d", data->bearing, data->quality);         // MODIFIED: Final encoding
 }
 
 int aprs_decode_agrelo_df(const char *info, aprs_agrelo_df_t *data) {
@@ -3115,5 +3094,285 @@ int aprs_decode_agrelo_df(const char *info, aprs_agrelo_df_t *data) {
         return -1;
     data->bearing = bearing;
     data->quality = quality;
+    return 0;
+}
+
+static int aprs__format_latlon(char *dst, size_t n, double lat, double lon, char sym_table, char sym_code) {
+    if (!dst || n < 1)
+        return -1;
+    if (!(sym_table == '/' || sym_table == '\\'))
+        return -1;
+    if (sym_code == '\0')
+        return -1;
+
+    char ns = (lat >= 0) ? 'N' : 'S';
+    char ew = (lon >= 0) ? 'E' : 'W';
+    lat = fabs(lat);
+    lon = fabs(lon);
+
+    int lat_deg = (int) floor(lat);
+    double lat_min = (lat - lat_deg) * 60.0;
+
+    int lon_deg = (int) floor(lon);
+    double lon_min = (lon - lon_deg) * 60.0;
+
+    return snprintf(dst, n, "%02d%05.2f%c%c%03d%05.2f%c%c", lat_deg, lat_min, ns, sym_table, lon_deg, lon_min, ew, sym_code);
+}
+
+/* ------------------------------------------------------------------ */
+/* DF Report (Position + CSE/SPD + /BRG/NRQ + optional DFS/PHG/comment) */
+/* ------------------------------------------------------------------ */
+int aprs_encode_df_report(char *buffer, int buf_size, aprs_df_report_t *report) {   // MODIFIED: Rewritten to follow APRS §7–8
+    if (!buffer || buf_size <= 0 || !report)
+        return -1;
+
+    /* Basic validations (strict but practical) */
+    if (report->latitude < -90.0 || report->latitude > 90.0)
+        return -1;            // MODIFIED
+    if (report->longitude < -180.0 || report->longitude > 180.0)
+        return -1;        // MODIFIED
+    if (!(report->symbol_table == '/' || report->symbol_table == '\\'))
+        return -1;  // MODIFIED
+    if (report->symbol_code == '\0')
+        return -1;                                     // MODIFIED
+    if (report->bearing < 0 || report->bearing > 359)
+        return -1;                   // MODIFIED
+    if (report->n_hits < 0 || report->n_hits > 9)
+        return -1;                       // MODIFIED
+    if (report->range < 0 || report->range > 9)
+        return -1;                       // MODIFIED
+    if (report->quality < 0 || report->quality > 9)
+        return -1;                       // MODIFIED
+
+    int course = (report->course < 0) ? 0 : report->course;                         // MODIFIED: default to 000/000 if unknown
+    int speed = (report->speed < 0) ? 0 : report->speed;
+    if (course < 0 || course > 360)
+        return -1;                                      // MODIFIED
+    if (speed < 0 || speed > 999)
+        return -1;                                      // MODIFIED
+
+    /* Build info in-place with careful bounds checking */
+    int total = 0;
+
+    /* DTI: '@' if timestamp present, otherwise '!' */
+    if (report->timestamp > 0) {                                                    // MODIFIED
+        if (total >= buf_size)
+            return -1;
+        buffer[total++] = '@';
+        unsigned t = report->timestamp % 86400; /* HMS only, zulu */
+        int hh = (int) (t / 3600);
+        int mm = (int) ((t % 3600) / 60);
+        int ss = (int) (t % 60);
+        int w = snprintf(buffer + total, buf_size - total, "%02d%02d%02dz", hh, mm, ss);
+        if (w < 0 || w >= buf_size - total)
+            return -1;
+        total += w;
+    } else {
+        if (total >= buf_size)
+            return -1;
+        buffer[total++] = '!';
+    }
+
+    /* Position + symbol table/code */
+    char pos[1 + 1 + 2 + 2 + 32];
+    int pw = aprs__format_latlon(pos, sizeof(pos), report->latitude, report->longitude, report->symbol_table, report->symbol_code);        // MODIFIED
+    if (pw < 0)
+        return -1;
+    if (pw >= buf_size - total)
+        return -1;
+    memcpy(buffer + total, pos, (size_t) pw);
+    total += pw;
+
+    /* Course/Speed 7-byte extension "ccc/sss" (APRS §7) */
+    int ccc = (course == 360) ? 0 : course;                                         // MODIFIED: 360 prints as 000 per common practice
+    int w = snprintf(buffer + total, buf_size - total, "%03d/%03d", ccc, speed);
+    if (w < 0 || w >= buf_size - total)
+        return -1;
+    total += w;
+
+    /* DF 8-byte "/BRG/NRQ" immediately following CSE/SPD (APRS §7, §8) */
+    w = snprintf(buffer + total, buf_size - total, "/%03d/%1d%1d%1d", report->bearing, report->n_hits, report->range, report->quality);  // MODIFIED
+    if (w < 0 || w >= buf_size - total)
+        return -1;
+    total += w;
+
+    /* Optional comment */
+    if (report->df_comment[0] != '\0') {                                            // MODIFIED
+        w = snprintf(buffer + total, buf_size - total, " %s", report->df_comment);
+        if (w < 0 || w >= buf_size - total)
+            return -1;
+        total += w;
+    }
+
+    /* Optional DFSshgd (Omni-DF Signal Strength). Replace PHG power with 's'. */
+    if (report->dfs_strength >= 0 && report->dfs_strength <= 9) {                   // MODIFIED
+        int h = (report->phg.height >= 0 && report->phg.height <= 9) ? report->phg.height : 0;
+        int g = (report->phg.gain >= 0 && report->phg.gain <= 9) ? report->phg.gain : 0;
+        int d = (report->phg.direction >= 0 && report->phg.direction <= 9) ? report->phg.direction : 0;
+        w = snprintf(buffer + total, buf_size - total, " DFS%d%d%d%d", report->dfs_strength, h, g, d);
+        if (w < 0 || w >= buf_size - total)
+            return -1;
+        total += w;
+    }
+
+    /* Optional PHGphgd (when provided; note DFS conceptually replaces PHG) */
+    if (report->phg.power >= 0 && report->phg.power <= 9) {                          // MODIFIED
+        int h = (report->phg.height >= 0) ? report->phg.height : 0;
+        int g = (report->phg.gain >= 0) ? report->phg.gain : 0;
+        int d = (report->phg.direction >= 0) ? report->phg.direction : 0;
+        w = snprintf(buffer + total, buf_size - total, " PHG%d%d%d%d", report->phg.power, h, g, d);
+        if (w < 0 || w >= buf_size - total)
+            return -1;
+        total += w;
+    }
+
+    /* NUL-terminate */
+    if (total >= buf_size)
+        return -1;
+    buffer[total] = '\0';
+    return total;
+}
+
+/* ------------------------------------------------------------------ */
+/* Decoder for DF Report (parses the format written above)            */
+/* ------------------------------------------------------------------ */
+int aprs_decode_df_report(const char *buffer, aprs_df_report_t *report) {           // MODIFIED: Rewritten to parse APRS DF per spec
+    if (!buffer || !report)
+        return -1;
+    memset(report, 0, sizeof(*report));
+    report->course = -1;                                                             // MODIFIED: defaults
+    report->speed = -1;
+    report->dfs_strength = -1;
+    report->phg.power = report->phg.height = report->phg.gain = report->phg.direction = -1;
+
+    const char *p = buffer;
+    if (*p != '!' && *p != '@')
+        return -1;
+    int has_ts = (*p == '@');
+    p++;
+
+    if (has_ts) {
+        /* Expect HHMMSSz */
+        int hh, mm, ss;
+        if (sscanf(p, "%2d%2d%2dz", &hh, &mm, &ss) != 3)
+            return -1;
+        report->timestamp = (unsigned) (hh * 3600 + mm * 60 + ss);
+        p += 7;
+    } else {
+        report->timestamp = 0;
+    }
+
+    /* Parse lat/sym_table/long/sym_code: DDMM.mmN<sym_table>DDDMM.mmE<sym_code> */
+    int lat_deg, lon_deg;
+    double lat_min, lon_min;
+    char ns, ew, st, sc;
+    if (sscanf(p, "%2d%5lf%c%c%3d%5lf%c%c", &lat_deg, &lat_min, &ns, &st, &lon_deg, &lon_min, &ew, &sc) != 8)
+        return -1;
+    report->symbol_table = st;
+    report->symbol_code = sc;
+
+    double lat = lat_deg + lat_min / 60.0;
+    double lon = lon_deg + lon_min / 60.0;
+    if (ns == 'S')
+        lat = -lat;
+    if (ew == 'W')
+        lon = -lon;
+    report->latitude = lat;
+    report->longitude = lon;
+
+    /* Advance over the 8+1+9+1 chars we just parsed */
+    p += 2 + 5 + 1 + 1 + 3 + 5 + 1 + 1;
+
+    /* Expect CSE/SPD "ccc/sss" */
+    int ccc, sss;
+    if (sscanf(p, "%3d/%3d", &ccc, &sss) != 2)
+        return -1;
+    report->course = ccc;
+    report->speed = sss;
+    p += 7;
+
+    /* Expect "/BRG/NRQ" */
+    if (*p != '/')
+        return -1;
+    p++;
+    int brg, N, R, Q;
+    if (sscanf(p, "%3d/%1d%1d%1d", &brg, &N, &R, &Q) != 4)
+        return -1;
+    report->bearing = brg;
+    report->n_hits = N;
+    report->range = R;
+    report->quality = Q;
+
+    /* Advance over "ddd/xyz" (3+1+3 = 7) but we already consumed NRQ by 3 digits; move to the rest */
+    /* Find start of optional comment/extensions (space or end) */
+    const char *after = strchr(p, ' ');
+    if (after) {
+        p = after + 1;
+
+        /* Copy comment up to start of a known extension or end */
+        report->df_comment[0] = '\0';
+        const char *dfs = strstr(p, " DFS");
+        const char *phg = strstr(p, " PHG");
+
+        const char *cut = NULL;
+        if (dfs && phg)
+            cut = (dfs < phg) ? dfs : phg;
+        else if (dfs)
+            cut = dfs;
+        else if (phg)
+            cut = phg;
+
+        if (cut) {
+            size_t n = (size_t) (cut - p);
+            if (n >= sizeof(report->df_comment))
+                n = sizeof(report->df_comment) - 1;
+            memcpy(report->df_comment, p, n);
+            report->df_comment[n] = '\0';
+            p = cut;
+        } else {
+            /* All the rest is comment */
+            size_t n = strlen(p);
+            if (n >= sizeof(report->df_comment))
+                n = sizeof(report->df_comment) - 1;
+            memcpy(report->df_comment, p, n);
+            report->df_comment[n] = '\0';
+            return 0;
+        }
+
+        /* Parse DFS if present: " DFSshgd" */
+        if (strncmp(p, " DFS", 4) == 0) {
+            p += 4;
+            int s = -1, h = -1, g = -1, d = -1;
+            if (sscanf(p, "%1d%1d%1d%1d", &s, &h, &g, &d) == 4) {
+                report->dfs_strength = s;
+                if (report->phg.height < 0)
+                    report->phg.height = h;
+                if (report->phg.gain < 0)
+                    report->phg.gain = g;
+                if (report->phg.direction < 0)
+                    report->phg.direction = d;
+                p += 4;
+            }
+        }
+
+        /* Parse PHG if present: " PHGphgd" */
+        if (strncmp(p, " PHG", 4) == 0) {
+            p += 4;
+            int ph = -1, hh = -1, gg = -1, dd = -1;
+            if (sscanf(p, "%1d%1d%1d%1d", &ph, &hh, &gg, &dd) == 4) {
+                report->phg.power = ph;
+                if (report->phg.height < 0)
+                    report->phg.height = hh;
+                if (report->phg.gain < 0)
+                    report->phg.gain = gg;
+                if (report->phg.direction < 0)
+                    report->phg.direction = dd;
+                p += 4;
+            }
+        }
+    } else {
+        report->df_comment[0] = '\0';
+    }
+
     return 0;
 }

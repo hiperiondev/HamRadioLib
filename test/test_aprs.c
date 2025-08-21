@@ -231,7 +231,7 @@ int test_aprs_weather_object_position() {
     // --- Weather Report Test (MDHM timestamp) ---
     {
         aprs_weather_report_t weather = { .has_position = false, .latitude = 0.0, .longitude = 0.0, .symbol_table = '/', .symbol_code = '_', .has_timestamp =
-                true, .timestamp = "12010000",
+        true, .timestamp = "12010000",
                 .timestamp_format = "MDHM",  // MODIFIED: corrected expected format
                 .is_zulu = true, .temperature = 25.0, .wind_speed = 10, .wind_direction = 180, .wind_gust = -1, .rainfall_last_hour = -1, .rainfall_24h = -1,
                 .rainfall_since_midnight = -1, .barometric_pressure = -1, .humidity = -1, .luminosity = -1, .snowfall_24h = -999.9, .rain_rate = -1,
@@ -754,20 +754,12 @@ int test_aprs_item_report() {
 
     // Test 1: Live item report with comment
     {
-        aprs_item_report_t item = {
-            .name = "ITEM1",
-            .is_live = true,
-            .latitude = 37.7749,
-            .longitude = -122.4194,
-            .symbol_table = '/',
-            .symbol_code = '>',
-            .comment = "Test item"
-        };
+        aprs_item_report_t item = { .name = "ITEM1", .is_live = true, .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/', .symbol_code = '>',
+                .comment = "Test item" };
         char info[100];
         int len = aprs_encode_item_report(info, 100, &item);
         TEST_ASSERT(len == 39, "Item report encoding length incorrect", err);
-        TEST_ASSERT(strcmp(info, ")ITEM1    !3746.49N/12225.16W>Test item") == 0,
-                    "Encoded item report incorrect", err);
+        TEST_ASSERT(strcmp(info, ")ITEM1    !3746.49N/12225.16W>Test item") == 0, "Encoded item report incorrect", err);
 
         aprs_item_report_t decoded;
         int ret = aprs_decode_item_report(info, &decoded);
@@ -784,20 +776,12 @@ int test_aprs_item_report() {
 
     // Test 2: Killed item report without comment
     {
-        aprs_item_report_t item = {
-            .name = "ITEM2",
-            .is_live = false,
-            .latitude = 37.7749,
-            .longitude = -122.4194,
-            .symbol_table = '/',
-            .symbol_code = '>',
-            .comment = NULL
-        };
+        aprs_item_report_t item = { .name = "ITEM2", .is_live = false, .latitude = 37.7749, .longitude = -122.4194, .symbol_table = '/', .symbol_code = '>',
+                .comment = NULL };
         char info[100];
         int len = aprs_encode_item_report(info, 100, &item);
         TEST_ASSERT(len == 30, "Killed item report encoding length incorrect", err);
-        TEST_ASSERT(strcmp(info, ")ITEM2    _3746.49N/12225.16W>") == 0,
-                    "Encoded killed item report incorrect", err); // MOD: expect '_' for killed
+        TEST_ASSERT(strcmp(info, ")ITEM2    _3746.49N/12225.16W>") == 0, "Encoded killed item report incorrect", err);  // MOD: expect '_' for killed
 
         aprs_item_report_t decoded;
         int ret = aprs_decode_item_report(info, &decoded);
@@ -808,8 +792,7 @@ int test_aprs_item_report() {
         TEST_ASSERT(fabs(decoded.longitude + 122.4194) < 0.001, "Decoded longitude incorrect", err);
         TEST_ASSERT(decoded.symbol_table == '/', "Decoded symbol table incorrect", err);
         TEST_ASSERT(decoded.symbol_code == '>', "Decoded symbol code incorrect", err);
-        TEST_ASSERT(decoded.comment != NULL && decoded.comment[0] == '\0',
-                    "Comment should be empty", err);
+        TEST_ASSERT(decoded.comment != NULL && decoded.comment[0] == '\0', "Comment should be empty", err);
         free(decoded.comment);
     }
 
@@ -997,19 +980,74 @@ int test_aprs_grid_square() {
     return err;
 }
 
-int test_aprs_df_report(void) {
+int test_aprs_df_report(void) {                                   // MODIFIED: Overhauled to validate APRS DF per spec
     printf("Testing DF Report encoding/decoding...\n");
 
-    aprs_df_report_t input = { .df_comment = "Test Shelter Data", .timestamp = 1234567890 };
-    char encoded[200];
-    int encoded_len = aprs_encode_df_report(encoded, sizeof(encoded), &input);
-    TEST_ASSERT(encoded_len > 0, "DF Report encoding failed", 0);
+    aprs_df_report_t in = { 0 };                                    // MODIFIED
+    in.latitude = 49.5;                                      // 49°30.00'N
+    in.longitude = -72.75;                                    // 072°45.00'W
+    in.symbol_table = '/';
+    in.symbol_code = '\\';                                      // DF symbol recommended per §8 note
+    in.course = 88;                                        // CSE/SPD
+    in.speed = 36;
+    in.bearing = 270;                                       // /BRG/NRQ
+    in.n_hits = 7;
+    in.range = 2;
+    in.quality = 9;
+    in.timestamp = 0;                                         // no timestamp -> '!' DTI
+    in.dfs_strength = 5;                                         // DFSshgd (s=5)
+    in.phg.power = -1;                                        // (DFS replaces PHG power). Keep PHG optional:
+    in.phg.height = 1;
+    in.phg.gain = 3;
+    in.phg.direction = 2;
+    strcpy(in.df_comment, "DF test");                             // MODIFIED
 
-    aprs_df_report_t decoded;
-    int ret = aprs_decode_df_report(encoded, &decoded);
-    TEST_ASSERT(ret == 0, "DF Report decoding failed", 0);
-    TEST_ASSERT(strcmp(decoded.df_comment, input.df_comment) == 0, "DF Report comment mismatch", 0);
-    TEST_ASSERT(decoded.timestamp == input.timestamp, "DF Report timestamp mismatch", 0);
+    char encoded[256];
+    int elen = aprs_encode_df_report(encoded, sizeof(encoded), &in);
+    TEST_ASSERT(elen > 0, "DF Report encoding failed", 0);        // MODIFIED
+
+    /* Expected exact APRS info field:
+     !4930.00N/07245.00W\088/036/270/729 DF test DFS5132
+     (note: symbol_code was '\\') */
+    const char *expected = "!4930.00N/07245.00W\\088/036/270/729 DF test DFS5132";  // MODIFIED
+    TEST_ASSERT(strcmp(encoded, expected) == 0, "DF Report encoded string mismatch", 0);  // MODIFIED
+
+    aprs_df_report_t out;
+    int ret = aprs_decode_df_report(encoded, &out);
+    TEST_ASSERT(ret == 0, "DF Report decoding failed", 0);        // MODIFIED
+
+    TEST_ASSERT(fabs(out.latitude - in.latitude) < 1e-6, "DF lat mismatch", 0);   // MODIFIED
+    TEST_ASSERT(fabs(out.longitude - in.longitude) < 1e-6, "DF lon mismatch", 0);   // MODIFIED
+    TEST_ASSERT(out.symbol_table == in.symbol_table, "DF sym table mismatch", 0);   // MODIFIED
+    TEST_ASSERT(out.symbol_code == in.symbol_code, "DF sym code mismatch", 0);    // MODIFIED
+    TEST_ASSERT(out.course == in.course, "DF course mismatch", 0);                  // MODIFIED
+    TEST_ASSERT(out.speed == in.speed, "DF speed mismatch", 0);                   // MODIFIED
+    TEST_ASSERT(out.bearing == in.bearing, "DF bearing mismatch", 0);               // MODIFIED
+    TEST_ASSERT(out.n_hits == in.n_hits, "DF N mismatch", 0);                     // MODIFIED
+    TEST_ASSERT(out.range == in.range, "DF R mismatch", 0);                     // MODIFIED
+    TEST_ASSERT(out.quality == in.quality, "DF Q mismatch", 0);                     // MODIFIED
+    TEST_ASSERT(strcmp(out.df_comment, "DF test") == 0, "DF comment mismatch", 0);  // MODIFIED
+    TEST_ASSERT(out.dfs_strength == 5, "DFS strength mismatch", 0);                 // MODIFIED
+    TEST_ASSERT(out.phg.height == 1 && out.phg.gain == 3 && out.phg.direction == 2,  // MODIFIED
+    "DFS/PHG h/g/d mismatch", 0);
+
+    return 0;
+}
+
+int test_aprs_agrelo_df(void) {                                  // MODIFIED: precise Agrelo DF test
+    printf("Testing Agrelo DF encoding/decoding...\n");
+
+    aprs_agrelo_df_t in = { .bearing = 123, .quality = 5 };       // MODIFIED
+    char info[16];
+    int len = aprs_encode_agrelo_df(info, sizeof(info), &in);     // MODIFIED
+    TEST_ASSERT(len > 0, "Agrelo DF encode failed", 0);           // MODIFIED
+    TEST_ASSERT(strcmp(info, "%123/5") == 0, "Agrelo DF encode mismatch", 0);  // MODIFIED
+
+    aprs_agrelo_df_t out;
+    int ret = aprs_decode_agrelo_df(info, &out);                  // (decoder existed; validates exact format)
+    TEST_ASSERT(ret == 0, "Agrelo DF decode failed", 0);
+    TEST_ASSERT(out.bearing == 123, "Agrelo DF decode bearing mismatch", 0);
+    TEST_ASSERT(out.quality == 5, "Agrelo DF decode quality mismatch", 0);
 
     return 0;
 }
@@ -1405,7 +1443,6 @@ int test_dx_spot_encode_decode(void) {
     int err = 0;
     char info[16];
     aprs_agrelo_df_t in_data;
-    aprs_agrelo_df_t decoded;
 
     in_data.bearing = 123;
     in_data.quality = 5;
@@ -1413,11 +1450,6 @@ int test_dx_spot_encode_decode(void) {
     int len = aprs_encode_agrelo_df(info, sizeof(info), &in_data);   // MODIFIED: renamed from aprs_encode_dx_spot
     TEST_ASSERT(len > 0, "Agrelo DF encode failed", err);
     TEST_ASSERT(strcmp(info, "%123/5") == 0, "Agrelo DF encode mismatch", err);
-
-    int ret = aprs_decode_agrelo_df(info, &decoded);                 // MODIFIED: renamed from aprs_decode_dx_spot
-    TEST_ASSERT(ret == 0, "Agrelo DF decode failed", err);
-    TEST_ASSERT(decoded.bearing == 123, "Agrelo DF decode bearing mismatch", err);
-    TEST_ASSERT(decoded.quality == 5, "Agrelo DF decode quality mismatch", err);
 
     return err;
 }
@@ -1453,6 +1485,8 @@ int test_aprs_main() {
     result |= test_user_defined_encode_decode();
     result |= test_third_party_encode_decode();
     result |= test_dx_spot_encode_decode();
+    result |= test_aprs_df_report();
+    result |= test_aprs_agrelo_df();
     printf("\n----------------------------------------------------------------------------------\n");
     printf("Tests APRS Completed. %s\n", result == 0 ? "All tests passed" : "Some tests failed");
     printf("----------------------------------------------------------------------------------\n\n");

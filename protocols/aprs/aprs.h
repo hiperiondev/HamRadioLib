@@ -77,8 +77,6 @@
 #define APRS_DTI_MIC_E_CURRENT              '`'
 /** Mic-E (old). */
 #define APRS_DTI_MIC_E_OLD                  '\''
-/** DX list for packet DX spotting. */
-#define APRS_DTI_DX_LIST                    '%'
 /** Test data (old). */
 #define APRS_DTI_RESERVED_2                 '"'
 /** Ultimeter 2000 raw weather. */
@@ -431,8 +429,29 @@ typedef struct {
  * @brief Direction Finding (DF) report (DTI '+').
  */
 typedef struct {
-    char df_comment[100];   // Comment field for DF Report (Shelter data or other DF-related information)
-    unsigned int timestamp;  // Timestamp of the DF report
+    /* --- Position & symbol --- */
+    double latitude;             // MODIFIED: Latitude in decimal degrees (N positive, S negative)
+    double longitude;            // MODIFIED: Longitude in decimal degrees (E positive, W negative)
+    char symbol_table;           // MODIFIED: Symbol table ID ('/' primary or '\\' alternate)
+    char symbol_code;            // MODIFIED: Symbol code character
+
+    /* --- Core DF data --- */
+    int course;                  // MODIFIED: Course 0–360; 0 means fixed DF per spec; -1 if unknown
+    int speed;                   // MODIFIED: Speed in knots 0–999; -1 if unknown
+    int bearing;                 // MODIFIED: DF bearing 0–359 degrees
+    int n_hits;                  // MODIFIED: NRQ 'N' digit 0–9 (0 means NRQ meaningless)
+    int range;                   // MODIFIED: NRQ 'R' digit 0–9 (range ~ 2^R miles)
+    int quality;                 // MODIFIED: NRQ 'Q' digit 0–9 (beamwidth quality)
+
+    /* --- Optional timestamp --- */
+    unsigned int timestamp;      // MODIFIED: If >0, encode '@' with HMS HHMMSSz (timestamp % 86400)
+
+    /* --- Optional extensions --- */
+    int dfs_strength;            // MODIFIED: DFS 's' 0–9, or -1 if absent (DFSshgd)
+    aprs_phg_t phg;              // MODIFIED: PHG data; set members to -1 if absent
+
+    /* --- Optional human comment --- */
+    char df_comment[100];        // MODIFIED: Optional free-text comment (NUL-terminated)
 } aprs_df_report_t;
 
 /**
@@ -456,8 +475,11 @@ typedef struct {
     int quality;  // MODIFIED: Changed from float frequency and char message[100]; to int quality; for Agrelo quality (0-9)
 } aprs_agrelo_df_t;  // MODIFIED: Changed struct name from aprs_dx_spot_t to aprs_agrelo_df_t for spec compliance
 
-int aprs_encode_agrelo_df(char *info, size_t len, const aprs_agrelo_df_t *data);   // MODIFIED: renamed from aprs_encode_dx_spot
-int aprs_decode_agrelo_df(const char *info, aprs_agrelo_df_t *data);               // MODIFIED: renamed from aprs_decode_dx_spot
+int aprs_encode_agrelo_df(char *info, size_t len, const aprs_agrelo_df_t *data);
+int aprs_decode_agrelo_df(const char *info, aprs_agrelo_df_t *data);
+
+int aprs_encode_df_report(char *buffer, int buf_size, aprs_df_report_t *report);     // MODIFIED: implemented per spec
+int aprs_decode_df_report(const char *buffer, aprs_df_report_t *report);             // MODIFIED: decoder updated per spec
 
 /** @name Bulletins / Items / Messages
  *  @{
