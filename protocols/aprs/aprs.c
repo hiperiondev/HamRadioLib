@@ -170,7 +170,8 @@ int aprs_validate_timestamp(const char *timestamp) {
                 return 0;  // MODIFIED
         }
         char suf = timestamp[6];  // MODIFIED
-        if (suf == 'z' || suf == 'Z' || suf == 'l' || suf == 'L') {  // MODIFIED: DHM
+        if (suf == 'z' || suf == '/')  // MODIFIED: DHM only 'z' (UTC) or '/' (local) per spec
+                {  // MODIFIED: DHM
             int dd = (timestamp[0] - '0') * 10 + (timestamp[1] - '0');  // MODIFIED
             int hh = (timestamp[2] - '0') * 10 + (timestamp[3] - '0');  // MODIFIED
             int mm = (timestamp[4] - '0') * 10 + (timestamp[5] - '0');  // MODIFIED
@@ -181,7 +182,8 @@ int aprs_validate_timestamp(const char *timestamp) {
             if (mm < 0 || mm > 59)
                 return 0;  // MODIFIED
             return 1;  // MODIFIED
-        } else if (suf == 'h' || suf == 'H') {  // MODIFIED: HMS
+        } else if (suf == 'h')  // MODIFIED: HMS only 'h' (UTC) per spec
+                {  // MODIFIED: HMS
             int hh = (timestamp[0] - '0') * 10 + (timestamp[1] - '0');  // MODIFIED
             int mm = (timestamp[2] - '0') * 10 + (timestamp[3] - '0');  // MODIFIED
             int ss = (timestamp[4] - '0') * 10 + (timestamp[5] - '0');  // MODIFIED
