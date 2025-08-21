@@ -1,2 +1,3 @@
 # HamRadioLib
-Radioamateur digital protocols 
+
+Agnostic implementation of radio amateur digital protocols
