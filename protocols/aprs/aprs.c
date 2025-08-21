@@ -439,38 +439,21 @@ int aprs_encode_position_no_ts(char *out, size_t outlen, const aprs_position_no_
     int n = snprintf(out, outlen, "%c%s%c%s%c", dti_char, lat_str, data->symbol_table, lon_str, data->symbol_code);
     if (n < 0 || (size_t) n >= outlen)
         return -1;
+
     size_t idx = (size_t) n;
 
-    // Optional course/speed (normalize course; negative course => skip; APRS v1.2 speed)
-    if (data->has_course_speed && data->course >= 0 && data->speed >= 0) {  // MODIFIED: guard negatives
-        int course = (data->course % 360 + 360) % 360;  // MODIFIED: wrap to [0..359]
-        if (course == 0)
-            course = 360;  // MODIFIED: 000 is unavailable; encode 360 instead
-        int encoded_speed;
-
-        // Special case for space station speed
-        if (data->speed == 15118) {
-            encoded_speed = 799;  // Encode 15,118 knots as 799 per APRS v1.2
-        }
-        // Speeds above 670 knots use S = 670 + (speed - 670) / 112
-        else if (data->speed > 670) {
-            if (data->speed > 74370) {
-                encoded_speed = 999;  // Clamp to max representable value
-            } else {
-                encoded_speed = 670 + (data->speed - 670) / 112;
-                if (encoded_speed > 999)
-                    encoded_speed = 999;  // Ensure within 3 digits
-            }
-        }
-        // Speeds 0-670 knots encoded directly
-        else {
-            encoded_speed = data->speed < 0 ? 0 : data->speed;
-        }
-
-        int m = snprintf(out + idx, outlen - idx, "%03d/%03d", course, encoded_speed);
-        if (m < 0 || (size_t) m >= (outlen - idx))
-            return -1;
-        idx += (size_t) m;
+    // Optional uncompressed Course/Speed " /ccc/sss "
+    if (data->has_course_speed && data->course >= 0 && data->speed >= 0) {  // MODIFIED: uncompressed ccc/sss uses raw values
+        int course = data->course;                                         // MODIFIED: keep 0..360 as-is
+        if (course < 0) course = 0;                                        // MODIFIED
+        if (course > 360) course = 360;                                    // MODIFIED
+        int speed = data->speed;                                           // MODIFIED: 0..999 knots as-is
+        if (speed < 0) speed = 0;                                          // MODIFIED
+        if (speed > 999) speed = 999;                                      // MODIFIED: clamp only; no scaling or Space Station code
+        int m = snprintf(out + idx, outlen - idx, "%03d/%03d", course, speed);  // MODIFIED
+        if (m < 0 || (size_t) m >= (outlen - idx))                          // MODIFIED
+            return -1;                                                      // MODIFIED
+        idx += (size_t) m;                                                  // MODIFIED
     }
 
     // Append comment if present
