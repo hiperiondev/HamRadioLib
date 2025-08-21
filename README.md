@@ -87,7 +87,7 @@ Distributed under the GNU General Public License v3.0. See `LICENSE.txt` for mor
 
 *Emiliano Augusto Gonzalez - egonzalez.hiperion@gmail.com*
 
-Project Link: [https://github.com/hiperiondev/stack_vm](https://github.com/hiperiondev/HamRadioLib)
+Project Link: [https://github.com/hiperiondev/HamRadioLib](https://github.com/hiperiondev/HamRadioLib)
 
 <div align="right">
   <a href="#readme-top">
