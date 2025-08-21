@@ -388,17 +388,45 @@ int test_aprs_mice() {
 int test_aprs_telemetry() {
     printf("test_aprs_telemetry\n");
     uint8_t err = 0;
-    const char *info = "T#001,123,045,067,089,100,00000000";
-    aprs_telemetry_t telemetry;
-    int ret = aprs_decode_telemetry(info, &telemetry);
-    TEST_ASSERT(ret == 0, "Failed to decode telemetry", err);
-    TEST_ASSERT(telemetry.sequence_number == 1, "Sequence number mismatch", err);
-    TEST_ASSERT(fabs(telemetry.analog[0] - 123) < 0.1, "Analog 0 mismatch", err);
-    TEST_ASSERT(fabs(telemetry.analog[1] - 45) < 0.1, "Analog 1 mismatch", err);
-    TEST_ASSERT(fabs(telemetry.analog[2] - 67) < 0.1, "Analog 2 mismatch", err);
-    TEST_ASSERT(fabs(telemetry.analog[3] - 89) < 0.1, "Analog 3 mismatch", err);
-    TEST_ASSERT(fabs(telemetry.analog[4] - 100) < 0.1, "Analog 4 mismatch", err);
-    TEST_ASSERT(telemetry.digital == 0, "Digital bits mismatch", err);
+
+    // Decode a canonical telemetry string (unchanged)
+    {
+        const char *info = "T#001,123,045,067,089,100,00000000";
+        aprs_telemetry_t telemetry;
+        int ret = aprs_decode_telemetry(info, &telemetry);
+        TEST_ASSERT(ret == 0, "Failed to decode telemetry", err);
+        TEST_ASSERT(telemetry.sequence_number == 1, "Sequence number mismatch", err);
+        TEST_ASSERT(fabs(telemetry.analog[0] - 123) < 0.1, "Analog 0 mismatch", err);
+        TEST_ASSERT(fabs(telemetry.analog[1] - 45) < 0.1, "Analog 1 mismatch", err);
+        TEST_ASSERT(fabs(telemetry.analog[2] - 67) < 0.1, "Analog 2 mismatch", err);
+        TEST_ASSERT(fabs(telemetry.analog[3] - 89) < 0.1, "Analog 3 mismatch", err);
+        TEST_ASSERT(fabs(telemetry.analog[4] - 100) < 0.1, "Analog 4 mismatch", err);
+        TEST_ASSERT(telemetry.digital == 0, "Digital bits mismatch", err);
+    }
+
+    // Verify encoder clamps analog to 0–255 per APRS 1.2 (NEW checks) // MODIFIED
+    {
+        aprs_telemetry_t t = { .sequence_number = 5, .analog = { -1.0, 12.4, 255.6, 300.0, 999.0 },         // MODIFIED: includes out-of-range values
+                .digital = 0xFF };
+        char info[64];
+        int len = aprs_encode_telemetry(info, sizeof(info), &t);
+        TEST_ASSERT(len > 0, "Failed to encode telemetry (clamp case)", err);  // MODIFIED
+
+        // Expect rounding then clamping: -1->0, 12.4->12, 255.6->256->clamp 255, 300->255, 999->255 // MODIFIED
+        TEST_ASSERT(strcmp(info, "T#005,000,012,255,255,255,11111111") == 0, "Telemetry clamp/format mismatch", err);                      // MODIFIED
+
+        aprs_telemetry_t d;
+        TEST_ASSERT(aprs_decode_telemetry(info, &d) == 0, "Decode of clamped telemetry failed", err);  // MODIFIED
+        TEST_ASSERT(d.sequence_number == 5, "Sequence number mismatch (clamp case)", err);             // MODIFIED
+        const double expected[5] = { 0, 12, 255, 255, 255 };                                           // MODIFIED
+        for (int i = 0; i < 5; i++) {
+            char msg[48];
+            snprintf(msg, sizeof(msg), "Clamped analog %d mismatch", i);
+            TEST_ASSERT(fabs(d.analog[i] - expected[i]) < 0.1, msg, err);                              // MODIFIED
+        }
+        TEST_ASSERT(d.digital == 0xFF, "Digital bits mismatch (clamp case)", err);                     // MODIFIED
+    }
+
     return 0;
 }
 

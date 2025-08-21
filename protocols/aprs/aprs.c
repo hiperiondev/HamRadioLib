@@ -1607,23 +1607,35 @@ int aprs_decode_mice_info(const char *info, size_t len, aprs_mice_t *data, bool 
 }
 
 int aprs_encode_telemetry(char *info, size_t len, const aprs_telemetry_t *data) {
-    if (len < 30)
+    if (!info || !data)                          // MODIFIED: added null checks
+        return -1;                               // MODIFIED
+
+    if (len < 30)                                // keep minimal sanity check
         return -1;
-    // Validate analog values (allow 0–999 instead of 0–255)
-    for (int i = 0; i < 5; i++) {
-        if (data->analog[i] < 0 || data->analog[i] > 999) {
-            return -1;
-        }
+
+    /* Per APRS 1.2, telemetry analog channels are RAW 0–255.
+     Clamp inputs here; engineering units belong in EQNS/UNIT/PARM. */  // MODIFIED
+    unsigned int a[5];                            // MODIFIED: use local clamped integers
+    for (int i = 0; i < 5; i++) {                 // MODIFIED
+        long v = (long) (data->analog[i] + (data->analog[i] >= 0 ? 0.5 : -0.5));  // MODIFIED: round to nearest
+        if (v < 0)
+            v = 0;                       // MODIFIED: clamp low
+        if (v > 255)
+            v = 255;                     // MODIFIED: clamp high per v1.2
+        a[i] = (unsigned int) v;                  // MODIFIED
     }
+
     // Build 8-bit digital bitstring
     char bits_str[9];
     for (int i = 7; i >= 0; i--) {
         bits_str[7 - i] = ((data->digital >> i) & 1) ? '1' : '0';
     }
     bits_str[8] = '\0';
+
     // Format: T#<seq>,<a0>,<a1>,<a2>,<a3>,<a4>,<8-bit-bits>
-    int ret = snprintf(info, len, "T#%03u,%03u,%03u,%03u,%03u,%03u,%s", data->sequence_number % 1000, (unsigned int) data->analog[0],
-            (unsigned int) data->analog[1], (unsigned int) data->analog[2], (unsigned int) data->analog[3], (unsigned int) data->analog[4], bits_str);
+    int ret = snprintf(info, len, "T#%03u,%03u,%03u,%03u,%03u,%03u,%s",      // MODIFIED: ensure fixed-width 0–255 fields
+            (unsigned int) (data->sequence_number % 1000), a[0], a[1], a[2], a[3], a[4],               // MODIFIED: use clamped values
+            bits_str);
     if (ret < 0 || (size_t) ret >= len) {
         return -1;
     }
