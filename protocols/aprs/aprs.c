@@ -483,19 +483,23 @@ int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *pos) {
     pos->has_course_speed = false;
     pos->course = -1;
     pos->speed = -1;
-    pos->altitude = -1;  // default when absent
+    pos->altitude = -1;
+    pos->has_dao = false;
+    pos->dao_datum = 0;
+    pos->dao_lat_extra = 0;
+    pos->dao_lon_extra = 0;
 
-    /* DTI check */
-    char dti = info[0];
-    if (dti != '!' && dti != '=')
+    /* DTI must be '!' or '=' */
+    if (info[0] != '!' && info[0] != '=')
         return -1;
-    pos->dti = dti;
+    pos->dti = info[0];
+
+    /* Expect fixed format: ! or =, then lat[8], symbol table, lon[9], symbol code */
+    if (strlen(info) < 20)
+        return -1;
 
     /* Extract latitude */
-    if (strlen(info) < 20)  // need at least DTI (1) + lat (8) + sym tbl (1) + lon (9) + sym code (1)  // MODIFIED
-        return -1;
-
-    char latstr[9] = { 0 };                                       // MODIFIED
+    char latstr[9] = { 0 };
     memcpy(latstr, info + 1, 8);                                // MODIFIED: copy exactly 8 chars "DDMM.hhN"
 
     int amb_lat = 0, amb_lon = 0;
@@ -507,7 +511,7 @@ int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *pos) {
     pos->symbol_table = info[9];                                 // MODIFIED (was 10)
 
     /* Extract longitude */
-    char lonstr[10] = { 0 };                                       // MODIFIED
+    char lonstr[10] = { 0 };                                     // MODIFIED
     memcpy(lonstr, info + 10, 9);                                // MODIFIED: copy exactly 9 chars "DDDMM.hhE"
     pos->longitude = aprs_parse_lon(lonstr, &amb_lon);
     if (isnan(pos->longitude))
@@ -519,12 +523,12 @@ int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *pos) {
     const char *p = info + 20;                                   // MODIFIED (was +22)
 
     /* Optional course/speed extension: accept "ddd/xxx" and strip even if malformed */  // MODIFIED
-    if (p && strlen(p) >= 7 && isdigit((unsigned char )p[0]) && isdigit((unsigned char )p[1]) && isdigit((unsigned char )p[2]) && p[3] == '/') {  // MODIFIED: only require first 3 digits and '/' (not enforcing digits after)
+    if (p && strlen(p) >= 7 && isdigit((unsigned char )p[0]) && p[3] == '/') {            // MODIFIED
     /* parse only if the last 3 are digits; otherwise, just skip */// MODIFIED
-        bool last_three_digits = isdigit((unsigned char)p[4]) &&                        // MODIFIED
-                isdigit((unsigned char )p[5]) &&                        // MODIFIED
-                isdigit((unsigned char )p[6]);                           // MODIFIED
-        if (last_three_digits) {                                                         // MODIFIED
+        bool last_three_digits = isdigit((unsigned char)p[4]) &&                          // MODIFIED
+                isdigit((unsigned char )p[5]) &&                          // MODIFIED
+                isdigit((unsigned char )p[6]);                             // MODIFIED
+        if (last_three_digits) {                                                          // MODIFIED
             int course = (p[0] - '0') * 100 + (p[1] - '0') * 10 + (p[2] - '0');
             int speed = (p[4] - '0') * 100 + (p[5] - '0') * 10 + (p[6] - '0');
             if (course >= 0 && course <= 360 && speed >= 0) {
@@ -533,31 +537,40 @@ int aprs_decode_position_no_ts(const char *info, aprs_position_no_ts_t *pos) {
                 pos->speed = speed;
             }
         }
-        p += 7;  // move past extension (strip even if malformed)                             // MODIFIED
+        p += 7;  // move past extension (strip even if malformed)                          // MODIFIED
     }
 
     /* Skip optional space */
     while (*p == ' ')
         p++;
 
-    /* Parse optional altitude token "/A=nnnnnn" from the remainder, but KEEP it in comment */  // MODIFIED
-    const char *a = strstr(p, "/A=");                                                    // MODIFIED
-    if (a && isdigit((unsigned char )a[3])) {                                             // MODIFIED
-        int alt = 0;
-        int digits = 0;
-        const char *q = a + 3;
-        while (isdigit((unsigned char)*q) && digits < 6) {
-            alt = alt * 10 + (*q - '0');
-            q++;
-            digits++;
-        }
-        if (digits >= 1) {
-            pos->altitude = alt;                                                         // MODIFIED
-        }
-    }
+    /* Parse optional altitude token "/A=nnnnnn" (feet). Keep it in the comment.
+     * Accept 1–6 digits only and reject partial/malformed tokens. Also ignore if multiple tokens exist. */  // MODIFIED
+    int a_count = 0;                                                                         // MODIFIED
+    const char *a = p;                                                                       // MODIFIED
+    const char *a_last = NULL;                                                               // MODIFIED
+    while ((a = strstr(a, "/A=")) != NULL) {                                                 // MODIFIED
+        a_count++;                                                                           // MODIFIED
+        a_last = a;                                                                          // MODIFIED
+        a += 3;                                                                              // MODIFIED
+    }                                                                                        // MODIFIED
+    if (a_count == 1 && a_last) {                                                            // MODIFIED
+        const char *q = a_last + 3;                                                          // MODIFIED
+        int alt = 0;                                                                         // MODIFIED
+        int digits = 0;                                                                      // MODIFIED
+        while (isdigit((unsigned char)*q) && digits < 6) {                                   // MODIFIED
+            alt = alt * 10 + (*q - '0');                                                     // MODIFIED
+            q++;                                                                             // MODIFIED
+            digits++;                                                                        // MODIFIED
+        }                                                                                    // MODIFIED
+        /* Valid only if we consumed 1..6 digits and the next char is NOT alnum (to avoid embedding) */  // MODIFIED
+        if (digits >= 1 && !isalnum((unsigned char )*q)) {                                    // MODIFIED
+            pos->altitude = alt;                                                             // MODIFIED
+        }                                                                                    // MODIFIED
+    }                                                                                        // MODIFIED
 
-    /* Comment is whatever remains after the (optional) extension, untouched */           // MODIFIED
-    pos->comment = (p && *p) ? my_strdup(p) : NULL;                                      // MODIFIED
+    /* Comment is whatever remains after the (optional) extension, untouched */              // MODIFIED
+    pos->comment = (p && *p) ? my_strdup(p) : NULL;                                          // MODIFIED
 
     // Set ambiguity values (keep per-axis)
     pos->lat_ambiguity = amb_lat;
@@ -2891,37 +2904,39 @@ void encodePositionPacket(const aprs_position_report_t *pos, char *out) {
     out[idx] = '\0';
 }
 
-// Decode altitude (/A=nnnnnn) and PHG from the comment string of a position/status packet
 void parseAltitudePHG(const char *comment, aprs_position_report_t *pos) {
     // Default: not found
     pos->altitude = -1;
     pos->phg.power = pos->phg.height = pos->phg.gain = pos->phg.direction = -1;
 
-    // Search for altitude token "/A="
-    const char *alt_ptr = strstr(comment, "/A=");
-    if (alt_ptr && strlen(alt_ptr) >= 6 + 3) {
-        // Expect exactly 6 digits after "/A="
-        char altbuf[7] = { 0 };
-        strncpy(altbuf, alt_ptr + 3, 6);
-        // Only parse if all 6 are digits
-        int valid = 1;
-        for (int i = 0; i < 6; i++) {
-            if (!isdigit(altbuf[i])) {
-                valid = 0;
-                break;
-            }
-        }
-        if (valid) {
-            pos->altitude = atoi(altbuf);
-        }
-    }
+    // Search for altitude token "/A=" with strict rules (feet, up to 6 digits, unique). // MODIFIED
+    int alt_count = 0;                                                                     // MODIFIED
+    const char *scan = comment;                                                            // MODIFIED
+    const char *alt_ptr = NULL;                                                            // MODIFIED
+    while ((scan = strstr(scan, "/A=")) != NULL) {                                         // MODIFIED
+        alt_count++;                                                                       // MODIFIED
+        alt_ptr = scan;                                                                    // MODIFIED
+        scan += 3;                                                                         // MODIFIED
+    }                                                                                      // MODIFIED
+    if (alt_count == 1 && alt_ptr) {                                                       // MODIFIED
+        const char *q = alt_ptr + 3;                                                       // MODIFIED
+        int alt = 0;                                                                       // MODIFIED
+        int digits = 0;                                                                    // MODIFIED
+        while (isdigit((unsigned char)*q) && digits < 6) {                                 // MODIFIED
+            alt = alt * 10 + (*q - '0');                                                   // MODIFIED
+            q++;                                                                           // MODIFIED
+            digits++;                                                                       // MODIFIED
+        }                                                                                  // MODIFIED
+        if (digits >= 1 && !isalnum((unsigned char )*q)) {                                  // MODIFIED
+            pos->altitude = alt;                                                           // MODIFIED
+        }                                                                                  // MODIFIED
+    }                                                                                      // MODIFIED
 
-    // Search for PHG token "PHG"
+    // Format is PHGxxxx (4 digits)
+    // Verify all 4 chars after "PHG" are digits or uppercase letters (digit or for extended height)
+    char phgbuf[5] = { 0 };
     const char *phg_ptr = strstr(comment, "PHG");
-    if (phg_ptr && strlen(phg_ptr) >= 4 + 3) {
-        // Format is PHGxxxx (4 digits)
-        // Verify all 4 chars after "PHG" are digits or uppercase letters (digit or for extended height)
-        char phgbuf[5] = { 0 };
+    if (phg_ptr && strlen(phg_ptr) >= 3 + 4) {
         strncpy(phgbuf, phg_ptr + 3, 4);
         int valid = 1;
         for (int i = 0; i < 4; i++) {

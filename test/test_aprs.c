@@ -916,8 +916,6 @@ uint8_t test_other(void) {
     return 0;
 }
 
-/* test_aprs.c */
-
 int test_aprs_raw_gps() {                                                         // MOD: adjusted tests for NMEA and Ultimeter
     printf("test_aprs_raw_gps\n");                                                // MOD
     int err = 0;                                                                  // MOD
@@ -1009,7 +1007,7 @@ int test_aprs_grid_square() {
 }
 
 int test_aprs_df_report(void) {                                   // MODIFIED: Overhauled to validate APRS DF per spec
-    printf("Testing DF Report encoding/decoding...\n");
+    printf("test_aprs_df_report\n");
 
     aprs_df_report_t in = { 0 };                                    // MODIFIED
     in.latitude = 49.5;                                      // 49°30.00'N
@@ -1063,7 +1061,7 @@ int test_aprs_df_report(void) {                                   // MODIFIED: O
 }
 
 int test_aprs_agrelo_df(void) {                                  // MODIFIED: precise Agrelo DF test
-    printf("Testing Agrelo DF encoding/decoding...\n");
+    printf("test_aprs_agrelo_df\n");
 
     aprs_agrelo_df_t in = { .bearing = 123, .quality = 5 };       // MODIFIED
     char info[16];
@@ -1265,6 +1263,7 @@ int test_aprs_directed_query() {
 // New test function for encodePositionPacket and parseAltitudePHG
 // Adjusted to match current implementation behavior (encodePositionPacket does not output for PositionReport)
 int test_encodePositionPacket_and_parseAltitudePHG() {
+    printf("test_encodePositionPacket_and_parseAltitudePHG\n");
     uint8_t err = 0;
 
     // Case 1: Both PHG and Altitude present
@@ -1468,6 +1467,7 @@ int test_third_party_encode_decode(void) {
 }
 
 int test_dx_spot_encode_decode(void) {
+    printf("test_dx_spot_encode_decode\n");
     int err = 0;
     char info[16];
     aprs_agrelo_df_t in_data;
@@ -1481,6 +1481,82 @@ int test_dx_spot_encode_decode(void) {
 
     return err;
 }
+
+int test_aprs_altitude_token_validation() {
+    printf("test_aprs_altitude_token_validation\n");
+    uint8_t err = 0;  // MODIFIED
+
+    // parseAltitudePHG: valid 1 digit // MODIFIED
+    {  // MODIFIED
+        const char *c = "Test /A=1 end";  // MODIFIED
+        aprs_position_report_t pr = { 0 };  // MODIFIED
+        parseAltitudePHG(c, &pr);  // MODIFIED
+        TEST_ASSERT(pr.altitude == 1, "Altitude 1 digit should be parsed", err);  // MODIFIED
+    }  // MODIFIED
+
+    // parseAltitudePHG: valid 6 digits with punctuation after // MODIFIED
+    {  // MODIFIED
+        const char *c = "Alt /A=123456.";  // MODIFIED
+        aprs_position_report_t pr = { 0 };  // MODIFIED
+        parseAltitudePHG(c, &pr);  // MODIFIED
+        TEST_ASSERT(pr.altitude == 123456, "Altitude 6 digits should be parsed", err);  // MODIFIED
+    }  // MODIFIED
+
+    // parseAltitudePHG: reject partials and malformed // MODIFIED
+    {  // MODIFIED
+        const char *c1 = "Bad /A= end";  // MODIFIED
+        aprs_position_report_t pr1 = { 0 };  // MODIFIED
+        parseAltitudePHG(c1, &pr1);  // MODIFIED
+        TEST_ASSERT(pr1.altitude == -1, "Empty /A= should not be parsed", err);  // MODIFIED
+
+        const char *c2 = "Bad /A=12A more";  // MODIFIED
+        aprs_position_report_t pr2 = { 0 };  // MODIFIED
+        parseAltitudePHG(c2, &pr2);  // MODIFIED
+        TEST_ASSERT(pr2.altitude == -1, "Alphabetic inside altitude should be rejected", err);  // MODIFIED
+
+        const char *c3 = "Bad /A=1234567";  // MODIFIED
+        aprs_position_report_t pr3 = { 0 };  // MODIFIED
+        parseAltitudePHG(c3, &pr3);  // MODIFIED
+        TEST_ASSERT(pr3.altitude == -1, "More than 6 digits should be rejected", err);  // MODIFIED
+
+        const char *c4 = "Bad /A=123X";  // MODIFIED
+        aprs_position_report_t pr4 = { 0 };  // MODIFIED
+        parseAltitudePHG(c4, &pr4);  // MODIFIED
+        TEST_ASSERT(pr4.altitude == -1, "Trailing alnum invalidates token", err);  // MODIFIED
+    }  // MODIFIED
+
+    // parseAltitudePHG: reject multiple tokens // MODIFIED
+    {  // MODIFIED
+        const char *c = "Two /A=123 middle /A=456 end";  // MODIFIED
+        aprs_position_report_t pr = { 0 };  // MODIFIED
+        parseAltitudePHG(c, &pr);  // MODIFIED
+        TEST_ASSERT(pr.altitude == -1, "Multiple /A= tokens should be ignored", err);  // MODIFIED
+    }  // MODIFIED
+
+    // aprs_decode_position_no_ts: keep comment, parse only valid token // MODIFIED
+    {  // MODIFIED
+        const char *info = "!4903.50N/07201.75W-Test /A=123X";  // MODIFIED
+        aprs_position_no_ts_t pos;  // MODIFIED
+        int ret = aprs_decode_position_no_ts(info, &pos);  // MODIFIED
+        TEST_ASSERT(ret == 0, "Decode position failed", err);  // MODIFIED
+        TEST_ASSERT(pos.altitude == -1, "Malformed altitude token must be rejected", err);  // MODIFIED
+        TEST_ASSERT(strcmp(pos.comment, "Test /A=123X") == 0, "Comment must be preserved", err);  // MODIFIED
+        free(pos.comment);  // MODIFIED
+    }  // MODIFIED
+
+    // aprs_decode_position_no_ts: multiple tokens should not parse altitude // MODIFIED
+    {  // MODIFIED
+        const char *info = "!4903.50N/07201.75W-Text /A=12 /A=34";  // MODIFIED
+        aprs_position_no_ts_t pos;  // MODIFIED
+        int ret = aprs_decode_position_no_ts(info, &pos);  // MODIFIED
+        TEST_ASSERT(ret == 0, "Decode position failed", err);  // MODIFIED
+        TEST_ASSERT(pos.altitude == -1, "Multiple tokens should be ignored", err);  // MODIFIED
+        TEST_ASSERT(strcmp(pos.comment, "Text /A=12 /A=34") == 0, "Comment must be preserved with all tokens", err);  // MODIFIED
+        free(pos.comment);  // MODIFIED
+    }  // MODIFIED
+
+    return err;  // MODIFIED
+}  // MODIFIED
 
 int test_aprs_main() {
     int result = 0;
@@ -1509,6 +1585,7 @@ int test_aprs_main() {
     result |= test_aprs_weather_extensions();
     result |= test_aprs_directed_query();
     result |= test_encodePositionPacket_and_parseAltitudePHG();
+    result |= test_aprs_altitude_token_validation();
     result |= test_aprs_additional_queries();
     result |= test_user_defined_encode_decode();
     result |= test_third_party_encode_decode();
